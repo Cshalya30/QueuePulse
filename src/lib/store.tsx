@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import React, {
   createContext,
@@ -50,14 +50,15 @@ interface QueuePulseContextType {
   nextScenarioStep: () => void;
   resetScenario: () => void;
   generateToken: (categoryId: string) => Token;
-  callNextToken: (counterId: string) => void;
-  triggerServiceDone: (counterId: string) => void;
+  callNextToken: (counterId: string) => { success: boolean; reason?: string };
+  triggerServiceDone: (counterId: string) => { success: boolean; reason?: string };
   triggerClearance: (counterId: string, distanceMm: number) => void;
-  triggerRfidTap: (counterId: string, customUid?: string, match?: boolean) => void;
-  triggerMissedToken: (counterId: string) => void;
+  triggerRfidTap: (counterId: string, customUid?: string, match?: boolean) => { success: boolean; reason?: string };
+  triggerMissedToken: (counterId: string) => { success: boolean; reason?: string };
   moveTokenToGrace: (tokenId: string) => void;
   toggleDeviceOnline: (deviceId: string) => void;
   resetToInitialState: () => void;
+  isCounterCallBlocked: (counterId: string) => { blocked: boolean; reason?: string };
   activeCounter: Counter | undefined;
   activeToken: Token | undefined;
   metrics: {
@@ -213,214 +214,523 @@ export const QueuePulseProvider: React.FC<{ children: React.ReactNode }> = ({
     return newToken;
   }, [categories, tokens, addEvent]);
 
-  // Call Next Token on a counter
-  const callNextToken = useCallback((counterId: string) => {
-    const counter = counters.find((c) => c.id === counterId);
-    if (!counter) return;
+  // Clearance & call readiness evaluator
+  const isCounterCallBlocked = useCallback(
+    (counterId: string): { blocked: boolean; reason?: string } => {
+      const counter = counters.find((c) => c.id === counterId);
+      if (!counter) return { blocked: true, reason: "Counter not found" };
 
-    // Find next eligible token for this category (Grace queue first, then FIFO waiting)
-    const eligibleToken =
-      tokens.find(
-        (t) => t.serviceCategoryId === counter.serviceCategoryId && t.status === "GRACE_QUEUE"
-      ) ||
-      tokens.find(
-        (t) => t.serviceCategoryId === counter.serviceCategoryId && t.status === "WAITING"
+      // 1. Counter Clearance Lock: Desk physically occupied
+      const isPhysicallyOccupied =
+        counter.occupancyState === "OCCUPIED" ||
+        counter.currentDistanceMm < counter.distanceThresholdMm;
+
+      if (isPhysicallyOccupied) {
+        return {
+          blocked: true,
+          reason: `Desk Occupied — Counter must be clear (ToF > ${counter.distanceThresholdMm}mm) before calling the next token.`,
+        };
+      }
+
+      // 2. Active Session Lock: Counter already has a token in CALLED or IN_SERVICE
+      if (counter.currentTokenId) {
+        const activeToken = tokens.find(
+          (t) =>
+            t.id === counter.currentTokenId &&
+            (t.status === "CALLED" ||
+              t.status === "IN_SERVICE" ||
+              t.status === "PENDING_CLEARANCE")
+        );
+        if (activeToken) {
+          return {
+            blocked: true,
+            reason: `Active session in progress (${activeToken.tokenCode} is ${activeToken.status}). Complete or release active session first.`,
+          };
+        }
+      }
+
+      return { blocked: false };
+    },
+    [counters, tokens]
+  );
+
+  // Call Next Token on a counter (Hardened)
+  const callNextToken = useCallback(
+    (counterId: string): { success: boolean; reason?: string } => {
+      const counter = counters.find((c) => c.id === counterId);
+      if (!counter) return { success: false, reason: "Counter not found" };
+
+      // Guard 1: Physical Clearance Lock
+      const isPhysicallyOccupied =
+        counter.occupancyState === "OCCUPIED" ||
+        counter.currentDistanceMm < counter.distanceThresholdMm;
+
+      if (isPhysicallyOccupied) {
+        addEvent({
+          counterId,
+          deviceId: counter.deviceId,
+          tokenId: counter.currentTokenId || null,
+          eventType: "OPERATOR_OVERRIDE",
+          eventTimestamp: new Date().toISOString(),
+          source: "ESP32_EDGE",
+          severity: "warning",
+          title: `Call Blocked: Desk ${counter.code} Occupied`,
+          description: `Desk is physically occupied (ToF ${counter.currentDistanceMm}mm < ${counter.distanceThresholdMm}mm). Customer departure required before next call.`,
+          metadata: {
+            reason: "DESK_OCCUPIED",
+            currentDistanceMm: counter.currentDistanceMm,
+            distanceThresholdMm: counter.distanceThresholdMm,
+            fullExitThresholdMm: counter.fullExitThresholdMm || 1400,
+          },
+        });
+        return {
+          success: false,
+          reason: `Desk Occupied — Counter must be clear (ToF > ${counter.distanceThresholdMm}mm) before calling the next token.`,
+        };
+      }
+
+      // Guard 2: Duplicate Call Prevention
+      if (counter.currentTokenId) {
+        const activeToken = tokens.find(
+          (t) =>
+            t.id === counter.currentTokenId &&
+            (t.status === "CALLED" ||
+              t.status === "IN_SERVICE" ||
+              t.status === "PENDING_CLEARANCE")
+        );
+
+        if (activeToken) {
+          addEvent({
+            counterId,
+            deviceId: counter.deviceId,
+            tokenId: activeToken.id,
+            eventType: "OPERATOR_OVERRIDE",
+            eventTimestamp: new Date().toISOString(),
+            source: "ESP32_EDGE",
+            severity: "warning",
+            title: `Duplicate Call Rejected on ${counter.code}`,
+            description: `Counter ${counter.code} already has active token ${activeToken.tokenCode} in state ${activeToken.status}. Complete or release active session first.`,
+            metadata: {
+              reason: "ACTIVE_SESSION_EXISTS",
+              activeTokenCode: activeToken.tokenCode,
+              activeStatus: activeToken.status,
+            },
+          });
+          return {
+            success: false,
+            reason: `Active session in progress (${activeToken.tokenCode} is ${activeToken.status}).`,
+          };
+        }
+      }
+
+      // Guard 3: Find next eligible token (Grace queue first, then FIFO waiting)
+      const eligibleToken =
+        tokens.find(
+          (t) =>
+            t.serviceCategoryId === counter.serviceCategoryId &&
+            t.status === "GRACE_QUEUE"
+        ) ||
+        tokens.find(
+          (t) =>
+            t.serviceCategoryId === counter.serviceCategoryId &&
+            t.status === "WAITING"
+        );
+
+      if (!eligibleToken) {
+        addEvent({
+          counterId,
+          deviceId: counter.deviceId,
+          tokenId: null,
+          eventType: "TOKEN_CALLED",
+          eventTimestamp: new Date().toISOString(),
+          source: "ESP32_EDGE",
+          severity: "warning",
+          title: `No Waiting Tokens for ${counter.code}`,
+          description: `Queue is currently empty for category. Counter remains clear.`,
+        });
+        return {
+          success: false,
+          reason: "No waiting tokens available in queue.",
+        };
+      }
+
+      // Transition token to CALLED
+      setTokens((prev) =>
+        prev.map((t) =>
+          t.id === eligibleToken.id
+            ? {
+                ...t,
+                status: "CALLED",
+                counterId,
+                calledAt: new Date().toISOString(),
+              }
+            : t
+        )
       );
 
-    if (!eligibleToken) {
+      // Link counter to called token
+      setCounters((prev) =>
+        prev.map((c) =>
+          c.id === counterId
+            ? {
+                ...c,
+                currentTokenId: eligibleToken.id,
+                queueLength: Math.max(0, c.queueLength - 1),
+                lastEventTime: new Date().toISOString(),
+              }
+            : c
+        )
+      );
+
+      setSelectedTokenId(eligibleToken.id);
+
       addEvent({
         counterId,
         deviceId: counter.deviceId,
-        tokenId: null,
+        tokenId: eligibleToken.id,
         eventType: "TOKEN_CALLED",
         eventTimestamp: new Date().toISOString(),
         source: "ESP32_EDGE",
-        severity: "warning",
-        title: `No Waiting Tokens for ${counter.code}`,
-        description: `Queue is currently empty for category. Counter remains clear.`,
+        severity: "info",
+        title: `Token ${eligibleToken.tokenCode} Called`,
+        description: `OLED display flashed, chime triggered on ${counter.code}. 60s RFID response window active.`,
+        metadata: {
+          tokenCode: eligibleToken.tokenCode,
+          counterCode: counter.code,
+          responseWindowSec: 60,
+        },
       });
-      return;
-    }
 
-    // Update token
-    setTokens((prev) =>
-      prev.map((t) =>
-        t.id === eligibleToken.id
-          ? {
-              ...t,
-              status: "CALLED",
-              counterId,
-              calledAt: new Date().toISOString(),
-            }
-          : t
-      )
-    );
+      return { success: true };
+    },
+    [counters, tokens, addEvent]
+  );
 
-    // Update counter
-    setCounters((prev) =>
-      prev.map((c) =>
-        c.id === counterId
-          ? {
-              ...c,
-              currentTokenId: eligibleToken.id,
-              queueLength: Math.max(0, c.queueLength - 1),
-              lastEventTime: new Date().toISOString(),
-            }
-          : c
-      )
-    );
+  // Trigger Service Done (Staff button pressed - Hardened)
+  const triggerServiceDone = useCallback(
+    (counterId: string): { success: boolean; reason?: string } => {
+      const counter = counters.find((c) => c.id === counterId);
+      if (!counter || !counter.currentTokenId) {
+        return { success: false, reason: "Counter has no active token." };
+      }
 
-    setSelectedTokenId(eligibleToken.id);
+      const currentToken = tokens.find((t) => t.id === counter.currentTokenId);
+      if (!currentToken || currentToken.status !== "IN_SERVICE") {
+        addEvent({
+          counterId,
+          deviceId: counter?.deviceId || null,
+          tokenId: currentToken?.id || null,
+          eventType: "OPERATOR_OVERRIDE",
+          eventTimestamp: new Date().toISOString(),
+          source: "ESP32_EDGE",
+          severity: "warning",
+          title: `Service Done Rejected on ${counter?.code || counterId}`,
+          description: `Cannot complete service: Token is not in IN_SERVICE status (current status: ${currentToken?.status || "None"}).`,
+        });
+        return {
+          success: false,
+          reason: `Cannot complete service: Token is ${currentToken?.status || "inactive"}.`,
+        };
+      }
 
-    addEvent({
-      counterId,
-      deviceId: counter.deviceId,
-      tokenId: eligibleToken.id,
-      eventType: "TOKEN_CALLED",
-      eventTimestamp: new Date().toISOString(),
-      source: "ESP32_EDGE",
-      severity: "info",
-      title: `Token ${eligibleToken.tokenCode} Called`,
-      description: `OLED display flashed, chime triggered on ${counter.code}. 60s RFID response window active.`,
-      metadata: {
-        tokenCode: eligibleToken.tokenCode,
-        counterCode: counter.code,
-        responseWindowSec: 60,
-      },
-    });
-  }, [counters, tokens, addEvent]);
+      const nowIso = new Date().toISOString();
+      const serviceSec = currentToken.serviceStartedAt
+        ? Math.max(
+            1,
+            Math.floor(
+              (Date.now() - new Date(currentToken.serviceStartedAt).getTime()) /
+                1000
+            )
+          )
+        : 360;
 
-  // Trigger Service Done (Staff button pressed)
-  const triggerServiceDone = useCallback((counterId: string) => {
-    const counter = counters.find((c) => c.id === counterId);
-    if (!counter || !counter.currentTokenId) return;
-
-    const currentToken = tokens.find((t) => t.id === counter.currentTokenId);
-    if (!currentToken) return;
-
-    const nowIso = new Date().toISOString();
-    const serviceSec = currentToken.serviceStartedAt
-      ? Math.floor((Date.now() - new Date(currentToken.serviceStartedAt).getTime()) / 1000)
-      : 360;
-
-    // Transition token to COMPLETED
-    setTokens((prev) =>
-      prev.map((t) =>
-        t.id === currentToken.id
-          ? {
-              ...t,
-              status: "COMPLETED",
-              serviceCompletedAt: nowIso,
-              serviceSeconds: serviceSec,
-            }
-          : t
-      )
-    );
-
-    // Counter moves to PENDING_CLEARANCE until ToF confirms exit
-    setCounters((prev) =>
-      prev.map((c) =>
-        c.id === counterId
-          ? {
-              ...c,
-              occupancyState: "OCCUPIED",
-              lastEventTime: nowIso,
-            }
-          : c
-      )
-    );
-
-    addEvent({
-      counterId,
-      deviceId: counter.deviceId,
-      tokenId: currentToken.id,
-      eventType: "SERVICE_COMPLETED",
-      eventTimestamp: nowIso,
-      source: "ESP32_EDGE",
-      severity: "success",
-      title: `Service Complete: ${currentToken.tokenCode}`,
-      description: `Staff pressed physical Service Done. Duration ${Math.floor(serviceSec / 60)}m ${serviceSec % 60}s. Awaiting ToF clearance.`,
-      metadata: {
-        tokenCode: currentToken.tokenCode,
-        serviceSeconds: serviceSec,
-        staff: counter.staffName,
-      },
-    });
-  }, [counters, tokens, addEvent]);
-
-  // Trigger Clearance (VL53L0X ToF sensor reading)
-  const triggerClearance = useCallback((counterId: string, distanceMm: number) => {
-    const counter = counters.find((c) => c.id === counterId);
-    if (!counter) return;
-
-    const isClear = distanceMm >= counter.distanceThresholdMm;
-    const newState: OccupancyState = isClear ? "CLEAR" : "OCCUPIED";
-    const nowIso = new Date().toISOString();
-
-    setCounters((prev) =>
-      prev.map((c) =>
-        c.id === counterId
-          ? {
-              ...c,
-              currentDistanceMm: distanceMm,
-              occupancyState: newState,
-              currentTokenId: isClear ? null : c.currentTokenId,
-              lastEventTime: nowIso,
-            }
-          : c
-      )
-    );
-
-    // Telemetry log
-    const newTelem: CounterTelemetry = {
-      id: `tel-${Date.now()}`,
-      deviceId: counter.deviceId,
-      counterId,
-      distanceMm,
-      occupancyState: newState,
-      queueLength: counter.queueLength,
-      currentTokenId: counter.currentTokenId,
-      rssi: -52,
-      recordedAt: nowIso,
-      isDemo: true,
-    };
-    setTelemetryHistory((prev) => [newTelem, ...prev.slice(0, 50)]);
-
-    addEvent({
-      counterId,
-      deviceId: counter.deviceId,
-      tokenId: counter.currentTokenId,
-      eventType: isClear ? "COUNTER_CLEARED" : "COUNTER_OCCUPIED",
-      eventTimestamp: nowIso,
-      source: "ESP32_EDGE",
-      severity: isClear ? "success" : "info",
-      title: isClear ? `Counter ${counter.code} Clear` : `Presence at ${counter.code}`,
-      description: `VL53L0X ToF sensor measured ${distanceMm}mm (threshold: ${counter.distanceThresholdMm}mm). State: ${newState}.`,
-      metadata: { distanceMm, thresholdMm: counter.distanceThresholdMm, state: newState },
-    });
-  }, [counters, addEvent]);
-
-  // Trigger RFID Card Tap
-  const triggerRfidTap = useCallback((counterId: string, customUid?: string, match: boolean = true) => {
-    const counter = counters.find((c) => c.id === counterId);
-    if (!counter || !counter.currentTokenId) return;
-
-    const currentToken = tokens.find((t) => t.id === counter.currentTokenId);
-    if (!currentToken) return;
-
-    const uid = customUid || `E4-${Math.floor(Math.random() * 89 + 10)}-${Math.floor(Math.random() * 89 + 10)}-8F`;
-    const nowIso = new Date().toISOString();
-
-    if (match) {
+      // Transition token to COMPLETED
       setTokens((prev) =>
         prev.map((t) =>
           t.id === currentToken.id
             ? {
                 ...t,
-                status: "IN_SERVICE",
-                serviceStartedAt: nowIso,
-                rfidVerified: true,
-                rfidSessionUid: uid,
+                status: "COMPLETED",
+                serviceCompletedAt: nowIso,
+                serviceSeconds: serviceSec,
+              }
+            : t
+        )
+      );
+
+      // Check clearance
+      const isClear = counter.currentDistanceMm >= counter.distanceThresholdMm;
+
+      setCounters((prev) =>
+        prev.map((c) =>
+          c.id === counterId
+            ? {
+                ...c,
+                occupancyState: isClear ? "CLEAR" : "OCCUPIED",
+                currentTokenId: isClear ? null : c.currentTokenId,
+                lastEventTime: nowIso,
+              }
+            : c
+        )
+      );
+
+      addEvent({
+        counterId,
+        deviceId: counter.deviceId,
+        tokenId: currentToken.id,
+        eventType: "SERVICE_COMPLETED",
+        eventTimestamp: nowIso,
+        source: "ESP32_EDGE",
+        severity: "success",
+        title: `Service Complete: ${currentToken.tokenCode}`,
+        description: `Staff pressed physical Service Done. Duration ${Math.floor(
+          serviceSec / 60
+        )}m ${serviceSec % 60}s. ${
+          isClear ? "Desk is clear." : "Awaiting ToF student clearance."
+        }`,
+        metadata: {
+          tokenCode: currentToken.tokenCode,
+          serviceSeconds: serviceSec,
+          staff: counter.staffName,
+          isClear,
+        },
+      });
+
+      return { success: true };
+    },
+    [counters, tokens, addEvent]
+  );
+
+  // Trigger Clearance (VL53L0X ToF sensor reading - Hardened)
+  const triggerClearance = useCallback(
+    (counterId: string, distanceMm: number) => {
+      const counter = counters.find((c) => c.id === counterId);
+      if (!counter) return;
+
+      const isClear = distanceMm >= counter.distanceThresholdMm;
+      const isFullExit = distanceMm >= (counter.fullExitThresholdMm || 1400);
+      const newState: OccupancyState = isClear ? "CLEAR" : "OCCUPIED";
+      const nowIso = new Date().toISOString();
+
+      setCounters((prev) =>
+        prev.map((c) => {
+          if (c.id !== counterId) return c;
+
+          // Only unassign currentTokenId if the token is already COMPLETED or MISSED
+          let nextTokenId = c.currentTokenId;
+          if (isClear && c.currentTokenId) {
+            const assignedToken = tokens.find((t) => t.id === c.currentTokenId);
+            if (
+              assignedToken &&
+              (assignedToken.status === "COMPLETED" ||
+                assignedToken.status === "MISSED" ||
+                assignedToken.status === "CANCELLED")
+            ) {
+              nextTokenId = null;
+            }
+          }
+
+          return {
+            ...c,
+            currentDistanceMm: distanceMm,
+            occupancyState: newState,
+            currentTokenId: nextTokenId,
+            lastEventTime: nowIso,
+          };
+        })
+      );
+
+      // Telemetry log
+      const newTelem: CounterTelemetry = {
+        id: `tel-${Date.now()}`,
+        deviceId: counter.deviceId,
+        counterId,
+        distanceMm,
+        occupancyState: newState,
+        queueLength: counter.queueLength,
+        currentTokenId: counter.currentTokenId,
+        rssi: -52,
+        recordedAt: nowIso,
+        isDemo: true,
+      };
+      setTelemetryHistory((prev) => [newTelem, ...prev.slice(0, 50)]);
+
+      addEvent({
+        counterId,
+        deviceId: counter.deviceId,
+        tokenId: counter.currentTokenId,
+        eventType: isClear ? "COUNTER_CLEARED" : "COUNTER_OCCUPIED",
+        eventTimestamp: nowIso,
+        source: "ESP32_EDGE",
+        severity: isClear ? "success" : "info",
+        title: isClear
+          ? `Counter ${counter.code} Clear`
+          : `Presence at ${counter.code}`,
+        description: `VL53L0X ToF sensor measured ${distanceMm}mm (operational clear: ${
+          counter.distanceThresholdMm
+        }mm, full exit: ${counter.fullExitThresholdMm || 1400}mm). State: ${newState}.`,
+        metadata: {
+          distanceMm,
+          distanceThresholdMm: counter.distanceThresholdMm,
+          fullExitThresholdMm: counter.fullExitThresholdMm || 1400,
+          isFullExit,
+          state: newState,
+        },
+      });
+    },
+    [counters, tokens, addEvent]
+  );
+
+  // Trigger RFID Card Tap (Hardened)
+  const triggerRfidTap = useCallback(
+    (
+      counterId: string,
+      customUid?: string,
+      match: boolean = true
+    ): { success: boolean; reason?: string } => {
+      const counter = counters.find((c) => c.id === counterId);
+      if (!counter || !counter.currentTokenId) {
+        return { success: false, reason: "Counter has no active token." };
+      }
+
+      const currentToken = tokens.find((t) => t.id === counter.currentTokenId);
+      if (!currentToken) {
+        return { success: false, reason: "Token not found." };
+      }
+
+      // Boundary check: Only CALLED tokens can be authenticated
+      if (currentToken.status !== "CALLED") {
+        addEvent({
+          counterId,
+          deviceId: counter.deviceId,
+          tokenId: currentToken.id,
+          eventType: "RFID_REJECTED",
+          eventTimestamp: new Date().toISOString(),
+          source: "ESP32_EDGE",
+          severity: "warning",
+          title: `RFID Ignored: Session Not in CALLED State`,
+          description: `RFID scan rejected. Token ${currentToken.tokenCode} is currently in ${currentToken.status} state.`,
+          metadata: {
+            status: currentToken.status,
+            tokenCode: currentToken.tokenCode,
+          },
+        });
+        return {
+          success: false,
+          reason: `Token is already in ${currentToken.status} state.`,
+        };
+      }
+
+      const uid =
+        customUid ||
+        `E4-${Math.floor(Math.random() * 89 + 10)}-${Math.floor(
+          Math.random() * 89 + 10
+        )}-8F`;
+      const nowIso = new Date().toISOString();
+
+      if (match) {
+        setTokens((prev) =>
+          prev.map((t) =>
+            t.id === currentToken.id
+              ? {
+                  ...t,
+                  status: "IN_SERVICE",
+                  serviceStartedAt: nowIso,
+                  rfidVerified: true,
+                  rfidSessionUid: uid,
+                }
+              : t
+          )
+        );
+
+        setCounters((prev) =>
+          prev.map((c) =>
+            c.id === counterId
+              ? {
+                  ...c,
+                  occupancyState: "OCCUPIED",
+                  currentDistanceMm: 420,
+                  lastEventTime: nowIso,
+                }
+              : c
+          )
+        );
+
+        addEvent({
+          counterId,
+          deviceId: counter.deviceId,
+          tokenId: currentToken.id,
+          eventType: "RFID_VERIFIED",
+          eventTimestamp: nowIso,
+          source: "ESP32_EDGE",
+          severity: "success",
+          title: `RFID Verified: ${currentToken.tokenCode}`,
+          description: `Student smartcard UID ${uid} matched session. Service commenced on ${counter.code}.`,
+          metadata: {
+            uid,
+            tokenCode: currentToken.tokenCode,
+            counter: counter.code,
+          },
+        });
+
+        return { success: true };
+      } else {
+        // RFID Mismatch: Token remains CALLED, countdown window remains active, audit trail logged
+        addEvent({
+          counterId,
+          deviceId: counter.deviceId,
+          tokenId: currentToken.id,
+          eventType: "RFID_REJECTED",
+          eventTimestamp: nowIso,
+          source: "ESP32_EDGE",
+          severity: "warning",
+          title: `RFID Mismatch on ${counter.code}: Access Denied`,
+          description: `Tapped card UID ${uid} does not match called token ${currentToken.tokenCode}. Session remains in CALLED window.`,
+          metadata: {
+            tappedUid: uid,
+            tokenCode: currentToken.tokenCode,
+            counterCode: counter.code,
+            reason: "UID_MISMATCH",
+          },
+        });
+
+        return {
+          success: false,
+          reason: "RFID smartcard UID mismatch. Token remains in CALLED state.",
+        };
+      }
+    },
+    [counters, tokens, addEvent]
+  );
+
+  // Trigger Missed Token / Move to Grace Queue (Hardened)
+  const triggerMissedToken = useCallback(
+    (counterId: string): { success: boolean; reason?: string } => {
+      const counter = counters.find((c) => c.id === counterId);
+      if (!counter || !counter.currentTokenId) {
+        return { success: false, reason: "Counter has no active token." };
+      }
+
+      const currentToken = tokens.find((t) => t.id === counter.currentTokenId);
+      if (!currentToken || currentToken.status !== "CALLED") {
+        return {
+          success: false,
+          reason: "Only CALLED tokens can be shifted to Grace Queue upon timeout.",
+        };
+      }
+
+      const nowIso = new Date().toISOString();
+
+      setTokens((prev) =>
+        prev.map((t) =>
+          t.id === currentToken.id
+            ? {
+                ...t,
+                status: "GRACE_QUEUE",
+                priority: "GRACE",
+                missedAt: nowIso,
+                movedToGraceAt: nowIso,
+                counterId: null,
               }
             : t
         )
@@ -431,92 +741,30 @@ export const QueuePulseProvider: React.FC<{ children: React.ReactNode }> = ({
           c.id === counterId
             ? {
                 ...c,
-                occupancyState: "OCCUPIED",
-                currentDistanceMm: 420,
+                currentTokenId: null,
                 lastEventTime: nowIso,
               }
             : c
-      )
-    );
+        )
+      );
 
       addEvent({
         counterId,
         deviceId: counter.deviceId,
         tokenId: currentToken.id,
-        eventType: "RFID_VERIFIED",
-        eventTimestamp: nowIso,
-        source: "ESP32_EDGE",
-        severity: "success",
-        title: `RFID Verified: ${currentToken.tokenCode}`,
-        description: `Student smartcard UID ${uid} matched session. Service commenced on ${counter.code}.`,
-        metadata: { uid, tokenCode: currentToken.tokenCode, counter: counter.code },
-      });
-    } else {
-      addEvent({
-        counterId,
-        deviceId: counter.deviceId,
-        tokenId: currentToken.id,
-        eventType: "RFID_REJECTED",
+        eventType: "TOKEN_MOVED_TO_GRACE",
         eventTimestamp: nowIso,
         source: "ESP32_EDGE",
         severity: "warning",
-        title: `RFID Mismatch on ${counter.code}`,
-        description: `Tapped card UID ${uid} does not match called token ${currentToken.tokenCode}. Buzzer error sound.`,
-        metadata: { uid, tokenCode: currentToken.tokenCode },
+        title: `${currentToken.tokenCode} -> Grace Queue`,
+        description: `Student did not respond within 60s window. Token preserved in Grace buffer with priority recall.`,
+        metadata: { tokenCode: currentToken.tokenCode, counter: counter.code },
       });
-    }
-  }, [counters, tokens, addEvent]);
 
-  // Trigger Missed Token / Move to Grace Queue
-  const triggerMissedToken = useCallback((counterId: string) => {
-    const counter = counters.find((c) => c.id === counterId);
-    if (!counter || !counter.currentTokenId) return;
-
-    const currentToken = tokens.find((t) => t.id === counter.currentTokenId);
-    if (!currentToken) return;
-
-    const nowIso = new Date().toISOString();
-
-    setTokens((prev) =>
-      prev.map((t) =>
-        t.id === currentToken.id
-          ? {
-              ...t,
-              status: "GRACE_QUEUE",
-              priority: "GRACE",
-              missedAt: nowIso,
-              movedToGraceAt: nowIso,
-              counterId: null,
-            }
-          : t
-      )
-    );
-
-    setCounters((prev) =>
-      prev.map((c) =>
-        c.id === counterId
-          ? {
-              ...c,
-              currentTokenId: null,
-              lastEventTime: nowIso,
-            }
-          : c
-      )
-    );
-
-    addEvent({
-      counterId,
-      deviceId: counter.deviceId,
-      tokenId: currentToken.id,
-      eventType: "TOKEN_MOVED_TO_GRACE",
-      eventTimestamp: nowIso,
-      source: "ESP32_EDGE",
-      severity: "warning",
-      title: `${currentToken.tokenCode} -> Grace Queue`,
-      description: `Student did not respond within 60s window. Token preserved in Grace buffer with priority recall.`,
-      metadata: { tokenCode: currentToken.tokenCode, counter: counter.code },
-    });
-  }, [counters, tokens, addEvent]);
+      return { success: true };
+    },
+    [counters, tokens, addEvent]
+  );
 
   const moveTokenToGrace = useCallback((tokenId: string) => {
     const nowIso = new Date().toISOString();
@@ -689,6 +937,7 @@ export const QueuePulseProvider: React.FC<{ children: React.ReactNode }> = ({
         moveTokenToGrace,
         toggleDeviceOnline,
         resetToInitialState,
+        isCounterCallBlocked,
         activeCounter,
         activeToken,
         metrics,

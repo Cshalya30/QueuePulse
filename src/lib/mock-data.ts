@@ -1,4 +1,4 @@
-﻿import {
+import {
   Workspace,
   ServiceCategory,
   Device,
@@ -134,6 +134,7 @@ export const INITIAL_COUNTERS: Counter[] = [
     occupancyState: "OCCUPIED",
     currentDistanceMm: 440,
     distanceThresholdMm: 800,
+    fullExitThresholdMm: 1400,
     currentTokenId: "tok-doc-024",
     staffName: "Sarah Jenkins",
     queueLength: 6,
@@ -151,6 +152,7 @@ export const INITIAL_COUNTERS: Counter[] = [
     occupancyState: "CLEAR",
     currentDistanceMm: 1420,
     distanceThresholdMm: 800,
+    fullExitThresholdMm: 1400,
     currentTokenId: "tok-doc-025",
     staffName: "Marcus Vance",
     queueLength: 5,
@@ -168,6 +170,7 @@ export const INITIAL_COUNTERS: Counter[] = [
     occupancyState: "OCCUPIED",
     currentDistanceMm: 390,
     distanceThresholdMm: 800,
+    fullExitThresholdMm: 1400,
     currentTokenId: "tok-acc-018",
     staffName: "Priya Nair",
     queueLength: 8,
@@ -185,6 +188,7 @@ export const INITIAL_COUNTERS: Counter[] = [
     occupancyState: "OCCUPIED",
     currentDistanceMm: 520,
     distanceThresholdMm: 800,
+    fullExitThresholdMm: 1400,
     currentTokenId: "tok-enq-042",
     staffName: "David Chen",
     queueLength: 4,

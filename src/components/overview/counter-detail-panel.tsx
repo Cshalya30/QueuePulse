@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import React, { useState } from "react";
 import { useQueuePulse } from "@/lib/store";
@@ -34,6 +34,7 @@ export const CounterDetailPanel: React.FC = () => {
     triggerRfidTap,
     triggerMissedToken,
     setSelectedTokenId,
+    isCounterCallBlocked,
   } = useQueuePulse();
 
   const [simDistance, setSimDistance] = useState<number>(
@@ -51,6 +52,7 @@ export const CounterDetailPanel: React.FC = () => {
   const category = categories.find((c) => c.id === activeCounter.serviceCategoryId);
   const device = devices.find((d) => d.id === activeCounter.deviceId);
   const currentToken = tokens.find((t) => t.id === activeCounter.currentTokenId);
+  const callStatus = isCounterCallBlocked(activeCounter.id);
 
   // Filter waiting tokens for this counter category
   const waitingTokens = tokens.filter(
@@ -174,9 +176,10 @@ export const CounterDetailPanel: React.FC = () => {
             className="w-full accent-accent-live h-1.5 bg-surface-3 rounded-lg cursor-pointer"
           />
 
-          <div className="flex items-center justify-between text-[10px] text-text-tertiary">
-            <span>&lt; 800mm: Student Present</span>
-            <span>&gt; 800mm: Counter Clear</span>
+          <div className="flex items-center justify-between text-[10px] text-text-tertiary font-mono">
+            <span>&lt; {activeCounter.distanceThresholdMm}mm: Desk Occupied</span>
+            <span>&ge; {activeCounter.distanceThresholdMm}mm: Operational Clear</span>
+            <span>&ge; {activeCounter.fullExitThresholdMm || 1400}mm: Full Exit</span>
           </div>
         </div>
 
@@ -194,6 +197,7 @@ export const CounterDetailPanel: React.FC = () => {
               size="sm"
               variant="live"
               onClick={() => callNextToken(activeCounter.id)}
+              disabled={callStatus.blocked}
               className="text-xs gap-1.5"
             >
               <PhoneCall className="w-3.5 h-3.5" />
@@ -233,6 +237,14 @@ export const CounterDetailPanel: React.FC = () => {
               Move to Grace Queue
             </Button>
           </div>
+
+          {/* Clearance Lockout or Duplicate Session Notice */}
+          {callStatus.blocked && (
+            <div className="p-2 rounded bg-surface-2 border border-accent-warning/30 text-[11px] text-accent-warning font-mono flex items-start gap-2">
+              <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5 text-accent-warning" />
+              <span>{callStatus.reason}</span>
+            </div>
+          )}
         </div>
 
         {/* Upcoming Queue Preview */}

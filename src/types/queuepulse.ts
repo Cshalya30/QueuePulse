@@ -1,4 +1,4 @@
-﻿export type TokenStatus =
+export type TokenStatus =
   | "WAITING"
   | "CALLED"
   | "IN_SERVICE"
@@ -61,7 +61,8 @@ export interface Counter {
   status: "ACTIVE" | "PAUSED" | "MAINTENANCE" | "OFFLINE";
   occupancyState: OccupancyState;
   currentDistanceMm: number;
-  distanceThresholdMm: number; // Clearance threshold (e.g. 800mm)
+  distanceThresholdMm: number; // Operational clearance threshold (e.g. 800mm: student stepped back)
+  fullExitThresholdMm?: number; // Full walkway exit confirmation (e.g. 1400mm: walkway vacant)
   currentTokenId?: string | null;
   staffName?: string;
   queueLength: number;

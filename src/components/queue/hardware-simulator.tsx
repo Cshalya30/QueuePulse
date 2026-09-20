@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import React, { useState } from "react";
 import { useQueuePulse } from "@/lib/store";
@@ -19,6 +19,7 @@ export const HardwareSimulator: React.FC = () => {
   const {
     counters,
     categories,
+    tokens,
     selectedCounterId,
     setSelectedCounterId,
     generateToken,
@@ -28,10 +29,13 @@ export const HardwareSimulator: React.FC = () => {
     triggerRfidTap,
     triggerMissedToken,
     resetToInitialState,
+    isCounterCallBlocked,
   } = useQueuePulse();
 
   const activeCounter =
     counters.find((c) => c.id === selectedCounterId) || counters[0];
+  const callStatus = isCounterCallBlocked(activeCounter.id);
+  const currentToken = tokens.find((t) => t.id === activeCounter.currentTokenId);
 
   return (
     <div className="p-4 bg-surface-1 border border-border-strong rounded-md space-y-3 shadow-md">
@@ -86,6 +90,8 @@ export const HardwareSimulator: React.FC = () => {
           size="compact"
           variant="live"
           onClick={() => callNextToken(activeCounter.id)}
+          disabled={callStatus.blocked}
+          title={callStatus.reason || "Call next token"}
           className="text-xs"
         >
           <PhoneCall className="w-3.5 h-3.5" />
@@ -96,6 +102,7 @@ export const HardwareSimulator: React.FC = () => {
           size="compact"
           variant="outline"
           onClick={() => triggerRfidTap(activeCounter.id, undefined, true)}
+          disabled={!currentToken || currentToken.status !== "CALLED"}
           className="text-xs"
         >
           <Radio className="w-3.5 h-3.5 text-accent-live" />
@@ -106,6 +113,7 @@ export const HardwareSimulator: React.FC = () => {
           size="compact"
           variant="warning"
           onClick={() => triggerMissedToken(activeCounter.id)}
+          disabled={!currentToken || currentToken.status !== "CALLED"}
           className="text-xs"
         >
           <AlertCircle className="w-3.5 h-3.5 text-accent-warning" />
@@ -116,6 +124,7 @@ export const HardwareSimulator: React.FC = () => {
           size="compact"
           variant="primary"
           onClick={() => triggerServiceDone(activeCounter.id)}
+          disabled={!currentToken || currentToken.status !== "IN_SERVICE"}
           className="text-xs"
         >
           <CheckCircle2 className="w-3.5 h-3.5 text-accent-live" />
@@ -132,6 +141,14 @@ export const HardwareSimulator: React.FC = () => {
           ToF Clear (1400mm)
         </Button>
       </div>
+
+      {/* State Lock Notice in Simulator */}
+      {callStatus.blocked && (
+        <div className="text-[11px] text-accent-warning font-mono bg-surface-2 px-2.5 py-1 rounded border border-accent-warning/25 flex items-center gap-1.5">
+          <AlertCircle className="w-3 h-3 shrink-0" />
+          <span>Call Lock: {callStatus.reason}</span>
+        </div>
+      )}
     </div>
   );
 };

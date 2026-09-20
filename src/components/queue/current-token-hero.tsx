@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import React, { useState, useEffect } from "react";
 import { useQueuePulse } from "@/lib/store";
@@ -28,12 +28,14 @@ export const CurrentTokenHero: React.FC = () => {
     triggerRfidTap,
     triggerMissedToken,
     setSelectedTokenId,
+    isCounterCallBlocked,
   } = useQueuePulse();
 
   const [responseCountdown, setResponseCountdown] = useState<number>(38);
 
   const currentToken = tokens.find((t) => t.id === activeCounter?.currentTokenId);
   const category = categories.find((c) => c.id === activeCounter?.serviceCategoryId);
+  const callStatus = activeCounter ? isCounterCallBlocked(activeCounter.id) : { blocked: true };
 
   // Countdown timer for called state
   useEffect(() => {
@@ -159,19 +161,30 @@ export const CurrentTokenHero: React.FC = () => {
             </div>
           </div>
         ) : (
-          <div className="py-8 text-center space-y-2">
+          <div className="py-8 text-center space-y-3">
             <p className="text-sm text-text-secondary">
-              Counter is clear and ready. Next waiting customer can be called.
+              {callStatus.blocked
+                ? "Desk is physically occupied or session active. Clearance required before calling next customer."
+                : "Counter is clear and ready. Next waiting customer can be called."}
             </p>
-            <Button
-              size="md"
-              variant="live"
-              onClick={() => callNextToken(activeCounter.id)}
-              className="gap-2"
-            >
-              <PhoneCall className="w-4 h-4" />
-              Call Next Token from Queue
-            </Button>
+            <div className="flex flex-col items-center gap-2">
+              <Button
+                size="md"
+                variant="live"
+                onClick={() => callNextToken(activeCounter.id)}
+                disabled={callStatus.blocked}
+                className="gap-2"
+              >
+                <PhoneCall className="w-4 h-4" />
+                Call Next Token from Queue
+              </Button>
+              {callStatus.blocked && (
+                <div className="text-xs text-accent-warning font-mono bg-accent-warning/10 border border-accent-warning/30 px-3 py-1.5 rounded-md flex items-center gap-1.5 mt-1">
+                  <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                  <span>{callStatus.reason}</span>
+                </div>
+              )}
+            </div>
           </div>
         )}
 
