@@ -1,0 +1,708 @@
+﻿"use client";
+
+import React, {
+  createContext,
+  useContext,
+  useState,
+  useEffect,
+  useCallback,
+  useMemo,
+} from "react";
+import {
+  Workspace,
+  ServiceCategory,
+  Counter,
+  Device,
+  Token,
+  OperationalEvent,
+  CounterTelemetry,
+  OccupancyState,
+  TokenStatus,
+} from "@/types/queuepulse";
+import {
+  INITIAL_WORKSPACE,
+  INITIAL_CATEGORIES,
+  INITIAL_COUNTERS,
+  INITIAL_DEVICES,
+  INITIAL_TOKENS,
+  INITIAL_EVENTS,
+  INITIAL_TELEMETRY_LOGS,
+  DEMO_SCENARIOS,
+} from "@/lib/mock-data";
+
+interface QueuePulseContextType {
+  workspace: Workspace;
+  categories: ServiceCategory[];
+  counters: Counter[];
+  devices: Device[];
+  tokens: Token[];
+  events: OperationalEvent[];
+  telemetryHistory: CounterTelemetry[];
+  selectedCounterId: string;
+  selectedTokenId: string | null;
+  setSelectedCounterId: (id: string) => void;
+  setSelectedTokenId: (id: string | null) => void;
+  isDemoMode: boolean;
+  setIsDemoMode: (val: boolean) => void;
+  activeScenarioId: string | null;
+  activeScenarioStep: number;
+  startScenario: (scenarioId: string) => void;
+  nextScenarioStep: () => void;
+  resetScenario: () => void;
+  generateToken: (categoryId: string) => Token;
+  callNextToken: (counterId: string) => void;
+  triggerServiceDone: (counterId: string) => void;
+  triggerClearance: (counterId: string, distanceMm: number) => void;
+  triggerRfidTap: (counterId: string, customUid?: string, match?: boolean) => void;
+  triggerMissedToken: (counterId: string) => void;
+  moveTokenToGrace: (tokenId: string) => void;
+  toggleDeviceOnline: (deviceId: string) => void;
+  resetToInitialState: () => void;
+  activeCounter: Counter | undefined;
+  activeToken: Token | undefined;
+  metrics: {
+    activeQueuesCount: number;
+    totalWaiting: number;
+    avgWaitSeconds: number;
+    servedTodayCount: number;
+    missedRatePercent: number;
+    slaCompliancePercent: number;
+  };
+}
+
+const QueuePulseContext = createContext<QueuePulseContextType | null>(null);
+
+export const QueuePulseProvider: React.FC<{ children: React.ReactNode }> = ({
+  children,
+}) => {
+  const [workspace] = useState<Workspace>(INITIAL_WORKSPACE);
+  const [categories, setCategories] = useState<ServiceCategory[]>(INITIAL_CATEGORIES);
+  const [counters, setCounters] = useState<Counter[]>(INITIAL_COUNTERS);
+  const [devices, setDevices] = useState<Device[]>(INITIAL_DEVICES);
+  const [tokens, setTokens] = useState<Token[]>(INITIAL_TOKENS);
+  const [events, setEvents] = useState<OperationalEvent[]>(INITIAL_EVENTS);
+  const [telemetryHistory, setTelemetryHistory] = useState<CounterTelemetry[]>(
+    INITIAL_TELEMETRY_LOGS
+  );
+
+  const [selectedCounterId, setSelectedCounterId] = useState<string>("cnt-doc-01");
+  const [selectedTokenId, setSelectedTokenId] = useState<string | null>(null);
+  const [isDemoMode, setIsDemoMode] = useState<boolean>(true);
+  const [activeScenarioId, setActiveScenarioId] = useState<string | null>(null);
+  const [activeScenarioStep, setActiveScenarioStep] = useState<number>(1);
+
+  // Live timer ticker to increment waiting times on waiting tokens
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setTokens((prev) =>
+        prev.map((t) => {
+          if (t.status === "WAITING" || t.status === "CALLED" || t.status === "GRACE_QUEUE") {
+            const createdMs = new Date(t.createdAt).getTime();
+            const waitingSec = Math.max(0, Math.floor((Date.now() - createdMs) / 1000));
+            return { ...t, waitingSeconds: waitingSec };
+          }
+          if (t.status === "IN_SERVICE" && t.serviceStartedAt) {
+            const startMs = new Date(t.serviceStartedAt).getTime();
+            const serviceSec = Math.max(0, Math.floor((Date.now() - startMs) / 1000));
+            return { ...t, serviceSeconds: serviceSec };
+          }
+          return t;
+        })
+      );
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  // Compute live operational metrics
+  const metrics = useMemo(() => {
+    const waitingTokens = tokens.filter(
+      (t) => t.status === "WAITING" || t.status === "CALLED" || t.status === "GRACE_QUEUE"
+    );
+    const completedTokens = tokens.filter((t) => t.status === "COMPLETED");
+    const missedTokens = tokens.filter(
+      (t) => t.status === "MISSED" || t.status === "GRACE_QUEUE"
+    );
+
+    const totalCalled = tokens.filter(
+      (t) => t.status === "IN_SERVICE" || t.status === "COMPLETED" || t.status === "MISSED" || t.status === "GRACE_QUEUE"
+    ).length;
+
+    const allWaits = [...completedTokens, ...waitingTokens].map(
+      (t) => t.waitingSeconds || 0
+    );
+    const avgWait =
+      allWaits.length > 0
+        ? Math.round(allWaits.reduce((a, b) => a + b, 0) / allWaits.length)
+        : 540;
+
+    const missedRate =
+      totalCalled > 0 ? (missedTokens.length / totalCalled) * 100 : 4.2;
+
+    const compliantCount = completedTokens.filter(
+      (t) => (t.waitingSeconds || 0) <= 900
+    ).length;
+    const slaPercent =
+      completedTokens.length > 0
+        ? Math.round((compliantCount / completedTokens.length) * 100)
+        : 88;
+
+    return {
+      activeQueuesCount: counters.filter((c) => c.status === "ACTIVE").length,
+      totalWaiting: waitingTokens.length,
+      avgWaitSeconds: avgWait,
+      servedTodayCount: completedTokens.length + 140, // Base offset for realistic day total
+      missedRatePercent: Number(missedRate.toFixed(1)),
+      slaCompliancePercent: slaPercent,
+    };
+  }, [tokens, counters]);
+
+  const addEvent = useCallback((event: Omit<OperationalEvent, "id" | "workspaceId" | "isDemo">) => {
+    const newEvent: OperationalEvent = {
+      ...event,
+      id: `evt-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+      workspaceId: INITIAL_WORKSPACE.id,
+      isDemo: isDemoMode,
+    };
+    setEvents((prev) => [newEvent, ...prev.slice(0, 99)]);
+  }, [isDemoMode]);
+
+  // Generate new token
+  const generateToken = useCallback((categoryId: string): Token => {
+    const category = categories.find((c) => c.id === categoryId) || categories[0];
+    const prefix = category.prefix;
+    const count = tokens.filter((t) => t.serviceCategoryId === categoryId).length + 29;
+    const tokenCode = `${prefix}-${count.toString().padStart(3, "0")}`;
+
+    const newToken: Token = {
+      id: `tok-${Date.now()}`,
+      workspaceId: INITIAL_WORKSPACE.id,
+      serviceCategoryId: categoryId,
+      counterId: null,
+      tokenCode,
+      status: "WAITING",
+      priority: "NORMAL",
+      createdAt: new Date().toISOString(),
+      waitingSeconds: 0,
+      isDemo: true,
+    };
+
+    setTokens((prev) => [...prev, newToken]);
+
+    // Update queue length in counters
+    setCounters((prev) =>
+      prev.map((c) =>
+        c.serviceCategoryId === categoryId
+          ? { ...c, queueLength: c.queueLength + 1 }
+          : c
+      )
+    );
+
+    addEvent({
+      counterId: null,
+      deviceId: null,
+      tokenId: newToken.id,
+      eventType: "TOKEN_CREATED",
+      eventTimestamp: new Date().toISOString(),
+      source: "HARDWARE_SIMULATOR",
+      severity: "info",
+      title: `Token ${tokenCode} Issued`,
+      description: `Kiosk printed ${tokenCode} for ${category.name}. Waiting queue updated.`,
+      metadata: { tokenCode, category: category.name },
+    });
+
+    return newToken;
+  }, [categories, tokens, addEvent]);
+
+  // Call Next Token on a counter
+  const callNextToken = useCallback((counterId: string) => {
+    const counter = counters.find((c) => c.id === counterId);
+    if (!counter) return;
+
+    // Find next eligible token for this category (Grace queue first, then FIFO waiting)
+    const eligibleToken =
+      tokens.find(
+        (t) => t.serviceCategoryId === counter.serviceCategoryId && t.status === "GRACE_QUEUE"
+      ) ||
+      tokens.find(
+        (t) => t.serviceCategoryId === counter.serviceCategoryId && t.status === "WAITING"
+      );
+
+    if (!eligibleToken) {
+      addEvent({
+        counterId,
+        deviceId: counter.deviceId,
+        tokenId: null,
+        eventType: "TOKEN_CALLED",
+        eventTimestamp: new Date().toISOString(),
+        source: "ESP32_EDGE",
+        severity: "warning",
+        title: `No Waiting Tokens for ${counter.code}`,
+        description: `Queue is currently empty for category. Counter remains clear.`,
+      });
+      return;
+    }
+
+    // Update token
+    setTokens((prev) =>
+      prev.map((t) =>
+        t.id === eligibleToken.id
+          ? {
+              ...t,
+              status: "CALLED",
+              counterId,
+              calledAt: new Date().toISOString(),
+            }
+          : t
+      )
+    );
+
+    // Update counter
+    setCounters((prev) =>
+      prev.map((c) =>
+        c.id === counterId
+          ? {
+              ...c,
+              currentTokenId: eligibleToken.id,
+              queueLength: Math.max(0, c.queueLength - 1),
+              lastEventTime: new Date().toISOString(),
+            }
+          : c
+      )
+    );
+
+    setSelectedTokenId(eligibleToken.id);
+
+    addEvent({
+      counterId,
+      deviceId: counter.deviceId,
+      tokenId: eligibleToken.id,
+      eventType: "TOKEN_CALLED",
+      eventTimestamp: new Date().toISOString(),
+      source: "ESP32_EDGE",
+      severity: "info",
+      title: `Token ${eligibleToken.tokenCode} Called`,
+      description: `OLED display flashed, chime triggered on ${counter.code}. 60s RFID response window active.`,
+      metadata: {
+        tokenCode: eligibleToken.tokenCode,
+        counterCode: counter.code,
+        responseWindowSec: 60,
+      },
+    });
+  }, [counters, tokens, addEvent]);
+
+  // Trigger Service Done (Staff button pressed)
+  const triggerServiceDone = useCallback((counterId: string) => {
+    const counter = counters.find((c) => c.id === counterId);
+    if (!counter || !counter.currentTokenId) return;
+
+    const currentToken = tokens.find((t) => t.id === counter.currentTokenId);
+    if (!currentToken) return;
+
+    const nowIso = new Date().toISOString();
+    const serviceSec = currentToken.serviceStartedAt
+      ? Math.floor((Date.now() - new Date(currentToken.serviceStartedAt).getTime()) / 1000)
+      : 360;
+
+    // Transition token to COMPLETED
+    setTokens((prev) =>
+      prev.map((t) =>
+        t.id === currentToken.id
+          ? {
+              ...t,
+              status: "COMPLETED",
+              serviceCompletedAt: nowIso,
+              serviceSeconds: serviceSec,
+            }
+          : t
+      )
+    );
+
+    // Counter moves to PENDING_CLEARANCE until ToF confirms exit
+    setCounters((prev) =>
+      prev.map((c) =>
+        c.id === counterId
+          ? {
+              ...c,
+              occupancyState: "OCCUPIED",
+              lastEventTime: nowIso,
+            }
+          : c
+      )
+    );
+
+    addEvent({
+      counterId,
+      deviceId: counter.deviceId,
+      tokenId: currentToken.id,
+      eventType: "SERVICE_COMPLETED",
+      eventTimestamp: nowIso,
+      source: "ESP32_EDGE",
+      severity: "success",
+      title: `Service Complete: ${currentToken.tokenCode}`,
+      description: `Staff pressed physical Service Done. Duration ${Math.floor(serviceSec / 60)}m ${serviceSec % 60}s. Awaiting ToF clearance.`,
+      metadata: {
+        tokenCode: currentToken.tokenCode,
+        serviceSeconds: serviceSec,
+        staff: counter.staffName,
+      },
+    });
+  }, [counters, tokens, addEvent]);
+
+  // Trigger Clearance (VL53L0X ToF sensor reading)
+  const triggerClearance = useCallback((counterId: string, distanceMm: number) => {
+    const counter = counters.find((c) => c.id === counterId);
+    if (!counter) return;
+
+    const isClear = distanceMm >= counter.distanceThresholdMm;
+    const newState: OccupancyState = isClear ? "CLEAR" : "OCCUPIED";
+    const nowIso = new Date().toISOString();
+
+    setCounters((prev) =>
+      prev.map((c) =>
+        c.id === counterId
+          ? {
+              ...c,
+              currentDistanceMm: distanceMm,
+              occupancyState: newState,
+              currentTokenId: isClear ? null : c.currentTokenId,
+              lastEventTime: nowIso,
+            }
+          : c
+      )
+    );
+
+    // Telemetry log
+    const newTelem: CounterTelemetry = {
+      id: `tel-${Date.now()}`,
+      deviceId: counter.deviceId,
+      counterId,
+      distanceMm,
+      occupancyState: newState,
+      queueLength: counter.queueLength,
+      currentTokenId: counter.currentTokenId,
+      rssi: -52,
+      recordedAt: nowIso,
+      isDemo: true,
+    };
+    setTelemetryHistory((prev) => [newTelem, ...prev.slice(0, 50)]);
+
+    addEvent({
+      counterId,
+      deviceId: counter.deviceId,
+      tokenId: counter.currentTokenId,
+      eventType: isClear ? "COUNTER_CLEARED" : "COUNTER_OCCUPIED",
+      eventTimestamp: nowIso,
+      source: "ESP32_EDGE",
+      severity: isClear ? "success" : "info",
+      title: isClear ? `Counter ${counter.code} Clear` : `Presence at ${counter.code}`,
+      description: `VL53L0X ToF sensor measured ${distanceMm}mm (threshold: ${counter.distanceThresholdMm}mm). State: ${newState}.`,
+      metadata: { distanceMm, thresholdMm: counter.distanceThresholdMm, state: newState },
+    });
+  }, [counters, addEvent]);
+
+  // Trigger RFID Card Tap
+  const triggerRfidTap = useCallback((counterId: string, customUid?: string, match: boolean = true) => {
+    const counter = counters.find((c) => c.id === counterId);
+    if (!counter || !counter.currentTokenId) return;
+
+    const currentToken = tokens.find((t) => t.id === counter.currentTokenId);
+    if (!currentToken) return;
+
+    const uid = customUid || `E4-${Math.floor(Math.random() * 89 + 10)}-${Math.floor(Math.random() * 89 + 10)}-8F`;
+    const nowIso = new Date().toISOString();
+
+    if (match) {
+      setTokens((prev) =>
+        prev.map((t) =>
+          t.id === currentToken.id
+            ? {
+                ...t,
+                status: "IN_SERVICE",
+                serviceStartedAt: nowIso,
+                rfidVerified: true,
+                rfidSessionUid: uid,
+              }
+            : t
+        )
+      );
+
+      setCounters((prev) =>
+        prev.map((c) =>
+          c.id === counterId
+            ? {
+                ...c,
+                occupancyState: "OCCUPIED",
+                currentDistanceMm: 420,
+                lastEventTime: nowIso,
+              }
+            : c
+      )
+    );
+
+      addEvent({
+        counterId,
+        deviceId: counter.deviceId,
+        tokenId: currentToken.id,
+        eventType: "RFID_VERIFIED",
+        eventTimestamp: nowIso,
+        source: "ESP32_EDGE",
+        severity: "success",
+        title: `RFID Verified: ${currentToken.tokenCode}`,
+        description: `Student smartcard UID ${uid} matched session. Service commenced on ${counter.code}.`,
+        metadata: { uid, tokenCode: currentToken.tokenCode, counter: counter.code },
+      });
+    } else {
+      addEvent({
+        counterId,
+        deviceId: counter.deviceId,
+        tokenId: currentToken.id,
+        eventType: "RFID_REJECTED",
+        eventTimestamp: nowIso,
+        source: "ESP32_EDGE",
+        severity: "warning",
+        title: `RFID Mismatch on ${counter.code}`,
+        description: `Tapped card UID ${uid} does not match called token ${currentToken.tokenCode}. Buzzer error sound.`,
+        metadata: { uid, tokenCode: currentToken.tokenCode },
+      });
+    }
+  }, [counters, tokens, addEvent]);
+
+  // Trigger Missed Token / Move to Grace Queue
+  const triggerMissedToken = useCallback((counterId: string) => {
+    const counter = counters.find((c) => c.id === counterId);
+    if (!counter || !counter.currentTokenId) return;
+
+    const currentToken = tokens.find((t) => t.id === counter.currentTokenId);
+    if (!currentToken) return;
+
+    const nowIso = new Date().toISOString();
+
+    setTokens((prev) =>
+      prev.map((t) =>
+        t.id === currentToken.id
+          ? {
+              ...t,
+              status: "GRACE_QUEUE",
+              priority: "GRACE",
+              missedAt: nowIso,
+              movedToGraceAt: nowIso,
+              counterId: null,
+            }
+          : t
+      )
+    );
+
+    setCounters((prev) =>
+      prev.map((c) =>
+        c.id === counterId
+          ? {
+              ...c,
+              currentTokenId: null,
+              lastEventTime: nowIso,
+            }
+          : c
+      )
+    );
+
+    addEvent({
+      counterId,
+      deviceId: counter.deviceId,
+      tokenId: currentToken.id,
+      eventType: "TOKEN_MOVED_TO_GRACE",
+      eventTimestamp: nowIso,
+      source: "ESP32_EDGE",
+      severity: "warning",
+      title: `${currentToken.tokenCode} -> Grace Queue`,
+      description: `Student did not respond within 60s window. Token preserved in Grace buffer with priority recall.`,
+      metadata: { tokenCode: currentToken.tokenCode, counter: counter.code },
+    });
+  }, [counters, tokens, addEvent]);
+
+  const moveTokenToGrace = useCallback((tokenId: string) => {
+    const nowIso = new Date().toISOString();
+    setTokens((prev) =>
+      prev.map((t) =>
+        t.id === tokenId
+          ? {
+              ...t,
+              status: "GRACE_QUEUE",
+              priority: "GRACE",
+              missedAt: nowIso,
+              movedToGraceAt: nowIso,
+            }
+          : t
+      )
+    );
+  }, []);
+
+  // Toggle Device Online / Offline (for scenario 3)
+  const toggleDeviceOnline = useCallback((deviceId: string) => {
+    setDevices((prev) =>
+      prev.map((d) => {
+        if (d.id === deviceId) {
+          const nextOnline = !d.online;
+          addEvent({
+            deviceId,
+            counterId: d.counterId,
+            tokenId: null,
+            eventType: nextOnline ? "DEVICE_CONNECTED" : "DEVICE_DISCONNECTED",
+            eventTimestamp: new Date().toISOString(),
+            source: nextOnline ? "CLOUD_SYNC" : "ESP32_EDGE",
+            severity: nextOnline ? "success" : "critical",
+            title: `${d.deviceCode} ${nextOnline ? "Connected" : "Offline"}`,
+            description: nextOnline
+              ? "Wi-Fi link restored. Flushing queued SPIFFS event buffer to cloud."
+              : "Wi-Fi link interrupted. ESP32 switching to autonomous local flash buffer.",
+          });
+          return {
+            ...d,
+            online: nextOnline,
+            lastSeenAt: new Date().toISOString(),
+          };
+        }
+        return d;
+      })
+    );
+  }, [addEvent]);
+
+  // Demo Scenarios Controller
+  const startScenario = useCallback((scenarioId: string) => {
+    setActiveScenarioId(scenarioId);
+    setActiveScenarioStep(1);
+  }, []);
+
+  const nextScenarioStep = useCallback(() => {
+    if (!activeScenarioId) return;
+    const scenario = DEMO_SCENARIOS.find((s) => s.id === activeScenarioId);
+    if (!scenario) return;
+
+    if (activeScenarioId === "sc-standard-cycle") {
+      if (activeScenarioStep === 1) {
+        // Step 1: Staff presses Service Done on Counter 1
+        triggerServiceDone("cnt-doc-01");
+        setActiveScenarioStep(2);
+      } else if (activeScenarioStep === 2) {
+        // Step 2: Student departs -> ToF clear (1450mm)
+        triggerClearance("cnt-doc-01", 1450);
+        setActiveScenarioStep(3);
+      } else if (activeScenarioStep === 3) {
+        // Step 3: Call next token (DOC-026)
+        callNextToken("cnt-doc-01");
+        setActiveScenarioStep(4);
+      } else if (activeScenarioStep === 4) {
+        // Step 4: Tap RFID card
+        triggerRfidTap("cnt-doc-01", "8E-92-3B-11", true);
+        setActiveScenarioStep(5);
+      } else {
+        // Reset
+        resetToInitialState();
+        setActiveScenarioStep(1);
+      }
+    } else if (activeScenarioId === "sc-missed-grace") {
+      if (activeScenarioStep === 1) {
+        triggerMissedToken("cnt-doc-02");
+        setActiveScenarioStep(2);
+      } else if (activeScenarioStep === 2) {
+        callNextToken("cnt-doc-02");
+        setActiveScenarioStep(3);
+      } else {
+        resetToInitialState();
+        setActiveScenarioStep(1);
+      }
+    } else if (activeScenarioId === "sc-offline-resilience") {
+      if (activeScenarioStep === 1) {
+        toggleDeviceOnline("dev-esp-01");
+        setActiveScenarioStep(2);
+      } else if (activeScenarioStep === 2) {
+        toggleDeviceOnline("dev-esp-01");
+        setActiveScenarioStep(3);
+      } else {
+        resetToInitialState();
+        setActiveScenarioStep(1);
+      }
+    }
+  }, [
+    activeScenarioId,
+    activeScenarioStep,
+    triggerServiceDone,
+    triggerClearance,
+    callNextToken,
+    triggerRfidTap,
+    triggerMissedToken,
+    toggleDeviceOnline,
+  ]);
+
+  const resetScenario = useCallback(() => {
+    setActiveScenarioId(null);
+    setActiveScenarioStep(1);
+  }, []);
+
+  const resetToInitialState = useCallback(() => {
+    setCounters(INITIAL_COUNTERS);
+    setDevices(INITIAL_DEVICES);
+    setTokens(INITIAL_TOKENS);
+    setEvents(INITIAL_EVENTS);
+    setTelemetryHistory(INITIAL_TELEMETRY_LOGS);
+    setSelectedCounterId("cnt-doc-01");
+    setSelectedTokenId(null);
+    setActiveScenarioId(null);
+    setActiveScenarioStep(1);
+  }, []);
+
+  const activeCounter = useMemo(
+    () => counters.find((c) => c.id === selectedCounterId) || counters[0],
+    [counters, selectedCounterId]
+  );
+
+  const activeToken = useMemo(
+    () => (selectedTokenId ? tokens.find((t) => t.id === selectedTokenId) : undefined),
+    [tokens, selectedTokenId]
+  );
+
+  return (
+    <QueuePulseContext.Provider
+      value={{
+        workspace,
+        categories,
+        counters,
+        devices,
+        tokens,
+        events,
+        telemetryHistory,
+        selectedCounterId,
+        selectedTokenId,
+        setSelectedCounterId,
+        setSelectedTokenId,
+        isDemoMode,
+        setIsDemoMode,
+        activeScenarioId,
+        activeScenarioStep,
+        startScenario,
+        nextScenarioStep,
+        resetScenario,
+        generateToken,
+        callNextToken,
+        triggerServiceDone,
+        triggerClearance,
+        triggerRfidTap,
+        triggerMissedToken,
+        moveTokenToGrace,
+        toggleDeviceOnline,
+        resetToInitialState,
+        activeCounter,
+        activeToken,
+        metrics,
+      }}
+    >
+      {children}
+    </QueuePulseContext.Provider>
+  );
+};
+
+export const useQueuePulse = () => {
+  const context = useContext(QueuePulseContext);
+  if (!context) {
+    throw new Error("useQueuePulse must be used within a QueuePulseProvider");
+  }
+  return context;
+};

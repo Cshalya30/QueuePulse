@@ -1,0 +1,85 @@
+﻿@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: #111214;
+  --surface-1: #17191c;
+  --surface-2: #1d2024;
+  --surface-3: #24282d;
+  --border-subtle: rgba(255, 255, 255, 0.08);
+  --border-strong: rgba(255, 255, 255, 0.16);
+  --text-primary: #f2f3f0;
+  --text-secondary: #a3a8ad;
+  --text-tertiary: #6f767d;
+  --accent-live: #b8ef79;
+  --accent-info: #7cc8ff;
+  --accent-warning: #e8b35c;
+  --accent-critical: #ef7777;
+  --accent-neutral: #a6aeb8;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  background-color: var(--background);
+  color: var(--text-primary);
+  font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overflow-x: hidden;
+}
+
+/* Tabular figures for operational tokens, timestamps and counters */
+.tabular-nums,
+[data-tabular="true"] {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+}
+
+/* Subtle dark scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #111214;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #24282d;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #363c44;
+}
+
+/* Technical grid background pattern */
+.bg-tech-grid {
+  background-size: 32px 32px;
+  background-image: 
+    linear-gradient(to right, rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+}
+
+.bg-tech-dots {
+  background-size: 24px 24px;
+  background-image: radial-gradient(rgba(255, 255, 255, 0.08) 1px, transparent 1px);
+}
+
+/* Subtle glow utilities */
+.glow-live {
+  box-shadow: 0 0 20px rgba(184, 239, 121, 0.15);
+}
+
+.glow-info {
+  box-shadow: 0 0 20px rgba(124, 200, 255, 0.15);
+}
+
+.glow-warning {
+  box-shadow: 0 0 20px rgba(232, 179, 92, 0.15);
+}
