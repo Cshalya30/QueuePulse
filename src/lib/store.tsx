@@ -29,6 +29,7 @@ import {
   INITIAL_TELEMETRY_LOGS,
   DEMO_SCENARIOS,
 } from "@/lib/mock-data";
+import { useLiveQueueData } from "@/lib/use-live-queue-data";
 
 interface QueuePulseContextType {
   workspace: Workspace;
@@ -93,6 +94,17 @@ export const QueuePulseProvider: React.FC<{ children: React.ReactNode }> = ({
   const [activeScenarioId, setActiveScenarioId] = useState<string | null>(null);
   const [activeScenarioStep, setActiveScenarioStep] = useState<number>(1);
 
+  // Live Mode reads the authoritative Supabase database (with Realtime
+  // updates) instead of the in-memory mock arrays below. Demo Mode keeps
+  // the existing hardware-simulator behavior untouched.
+  const live = useLiveQueueData(!isDemoMode);
+  const effectiveCategories = !isDemoMode && !live.error ? live.categories : categories;
+  const effectiveCounters = !isDemoMode && !live.error ? live.counters : counters;
+  const effectiveDevices = !isDemoMode && !live.error ? live.devices : devices;
+  const effectiveTokens = !isDemoMode && !live.error ? live.tokens : tokens;
+  const effectiveEvents = !isDemoMode && !live.error ? live.events : events;
+  const effectiveTelemetry = !isDemoMode && !live.error ? live.telemetryHistory : telemetryHistory;
+
   // Live timer ticker to increment waiting times on waiting tokens
   useEffect(() => {
     const timer = setInterval(() => {
@@ -117,6 +129,8 @@ export const QueuePulseProvider: React.FC<{ children: React.ReactNode }> = ({
 
   // Compute live operational metrics
   const metrics = useMemo(() => {
+    const tokens = effectiveTokens;
+    const counters = effectiveCounters;
     const waitingTokens = tokens.filter(
       (t) => t.status === "WAITING" || t.status === "CALLED" || t.status === "GRACE_QUEUE"
     );
@@ -152,12 +166,12 @@ export const QueuePulseProvider: React.FC<{ children: React.ReactNode }> = ({
       activeQueuesCount: counters.filter((c) => c.status === "ACTIVE").length,
       totalWaiting: waitingTokens.length,
       avgWaitSeconds: avgWait,
-      servedTodayCount: completedTokens.length + 140, // Base offset for realistic day total
+      servedTodayCount: completedTokens.length + (isDemoMode ? 140 : 0), // Demo-only base offset for a realistic-looking day total
       missedRatePercent: Number(missedRate.toFixed(1)),
       slaCompliancePercent: slaPercent,
       graceQueueCount: tokens.filter((t) => t.status === "GRACE_QUEUE").length,
     };
-  }, [tokens, counters]);
+  }, [effectiveTokens, effectiveCounters, isDemoMode]);
 
   const addEvent = useCallback((event: Omit<OperationalEvent, "id" | "workspaceId" | "isDemo">) => {
     const newEvent: OperationalEvent = {
@@ -900,25 +914,25 @@ export const QueuePulseProvider: React.FC<{ children: React.ReactNode }> = ({
   }, []);
 
   const activeCounter = useMemo(
-    () => counters.find((c) => c.id === selectedCounterId) || counters[0],
-    [counters, selectedCounterId]
+    () => effectiveCounters.find((c) => c.id === selectedCounterId) || effectiveCounters[0],
+    [effectiveCounters, selectedCounterId]
   );
 
   const activeToken = useMemo(
-    () => (selectedTokenId ? tokens.find((t) => t.id === selectedTokenId) : undefined),
-    [tokens, selectedTokenId]
+    () => (selectedTokenId ? effectiveTokens.find((t) => t.id === selectedTokenId) : undefined),
+    [effectiveTokens, selectedTokenId]
   );
 
   return (
     <QueuePulseContext.Provider
       value={{
-        workspace,
-        categories,
-        counters,
-        devices,
-        tokens,
-        events,
-        telemetryHistory,
+        workspace: !isDemoMode && live.workspace && !live.error ? live.workspace : workspace,
+        categories: effectiveCategories,
+        counters: effectiveCounters,
+        devices: effectiveDevices,
+        tokens: effectiveTokens,
+        events: effectiveEvents,
+        telemetryHistory: effectiveTelemetry,
         selectedCounterId,
         selectedTokenId,
         setSelectedCounterId,

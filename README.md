@@ -60,11 +60,24 @@ npm start
 
 ---
 
-## 📡 REST Ingestion Endpoints (for ESP32)
+## 📡 REST API (server-authoritative, Supabase-backed)
 
-- `POST /api/telemetry` — Ingests ToF distance (mm), occupancy status, and RSSI signal.
-- `POST /api/events` — Records RFID card taps, service completion triggers, and clearance transitions.
-- `GET /api/tokens` / `POST /api/tokens` — Kiosk token issuance.
+All `/api/counters/:id/*` and `/api/telemetry` routes require an `x-device-secret` header matching the hash stored in `devices.secret_hash` (see `scripts/provision-device.mjs`). State transitions are enforced by Postgres functions in `supabase/migrations/0001_atomic_queue_ops.sql`, not by the browser or the ESP32 — a rejected transition (e.g. calling a token on an occupied desk) returns a 4xx with a reason string.
+
+- `GET /api/tokens` — List tokens (optional `?workspaceId=&status=`).
+- `POST /api/tokens` — Kiosk/RFID registration; atomically allocates the next sequential token number per category and rejects a duplicate active registration for the same RFID UID.
+- `POST /api/counters/:id/call` — Staff NEXT button. Atomically claims the next eligible token (Grace Queue first, then FIFO), rejecting if the desk is occupied or a session is already active.
+- `POST /api/counters/:id/rfid` — RFID tap at the counter; verifies against the token's registered UID and starts service.
+- `POST /api/counters/:id/done` — Staff DONE button; completes the active IN_SERVICE token.
+- `POST /api/counters/:id/missed` — Called by the node after its local 60s RFID response window expires; moves the token to the Grace Queue.
+- `POST /api/telemetry` — ToF distance ingestion; applies clearance/occupancy transitions and logs a `counter_telemetry` row.
+- `POST /api/events` — Audit log entry (ESP32 edge events require device auth; operator-sourced events do not).
+
+### Environment variables
+See `.env.example`. `SUPABASE_SERVICE_ROLE_KEY` and `SUPABASE_URL` are server-only and must never be prefixed `NEXT_PUBLIC_`.
+
+### Live Mode vs Demo Mode
+The dashboard's Demo/Live switcher (top bar) now does real work: Demo Mode runs the original in-memory hardware simulator untouched; Live Mode reads real Supabase data with Realtime updates and shows a configuration error inline if Supabase env vars are missing.
 
 ---
 
