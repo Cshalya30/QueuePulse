@@ -47,6 +47,18 @@
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
 #include <Adafruit_VL53L0X.h>
+#include <time.h>
+
+// ---- TLS root CA ----
+// Paste the PEM contents of https://letsencrypt.org/certs/isrgrootx1.pem
+// (or whichever CA your actual deployment domain chains to — check with
+// `openssl s_client -connect your-deployment.vercel.app:443 -showcerts`)
+// between the quotes below, then flip USE_SETINSECURE to false. Left
+// blank deliberately: a hand-transcribed certificate string risks being
+// subtly wrong, which is worse than an honest setInsecure() fallback —
+// see firmware/README.md "TLS" section for why this is not done here.
+static const char ROOT_CA_PEM[] = "";
+#define USE_SETINSECURE true
 
 // ---- Site configuration (fill in before flashing) ----
 const char* WIFI_SSID        = "YOUR_WIFI_SSID";
@@ -128,7 +140,11 @@ bool postJson(const String& path, const JsonDocument& body, String& responseOut,
 
   for (int attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     WiFiClientSecure client;
-    client.setInsecure(); // TODO: pin the Vercel/Let's Encrypt root CA for production hardening
+    if (USE_SETINSECURE || strlen(ROOT_CA_PEM) == 0) {
+      client.setInsecure(); // see firmware/README.md "TLS" — no root CA provisioned
+    } else {
+      client.setCACert(ROOT_CA_PEM); // requires configTime() to have synced the clock, see setup()
+    }
     HTTPClient http;
     http.setTimeout(HTTP_TIMEOUT_MS);
 
@@ -298,6 +314,20 @@ void setup() {
 
   WiFi.mode(WIFI_STA);
   ensureWifi();
+
+  if (!USE_SETINSECURE && strlen(ROOT_CA_PEM) > 0) {
+    // Real cert validation needs a correct clock — TLS checks notBefore/
+    // notAfter against system time, and the ESP32 boots at epoch 0.
+    configTime(0, 0, "pool.ntp.org", "time.nist.gov");
+    oledMessage("Syncing time...");
+    time_t now = time(nullptr);
+    unsigned long start = millis();
+    while (now < 100000 && millis() - start < 10000) {
+      delay(200);
+      now = time(nullptr);
+    }
+  }
+
   oledMessage("Ready", DEVICE_CODE);
   setLeds(true, false, false);
 }
