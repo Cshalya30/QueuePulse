@@ -165,7 +165,14 @@ export function useLiveQueueData(enabled: boolean): LiveQueueData {
         supabase!.from("workspaces").select("*").limit(1).maybeSingle(),
         supabase!.from("service_categories").select("*"),
         supabase!.from("counters").select("*"),
-        supabase!.from("devices").select("*"),
+        // Explicit column list, not select("*"): migration 0001 grants anon
+        // SELECT on only this subset (secret_hash is withheld), and Postgres
+        // rejects the whole query if any requested column is unauthorized —
+        // select("*") would 403 this call and, via the firstError check
+        // below, take down the entire Live Mode fetch with it.
+        supabase!
+          .from("devices")
+          .select("id, workspace_id, device_code, firmware_version, last_seen_at, online, wifi_signal, uptime_seconds, created_at"),
         supabase!.from("tokens").select("*").order("created_at", { ascending: true }),
         supabase!.from("events").select("*").order("event_timestamp", { ascending: false }).limit(100),
         supabase!.from("counter_telemetry").select("*").order("recorded_at", { ascending: false }).limit(50),

@@ -27,7 +27,17 @@ export const PG_ERROR_MAP: Record<string, { status: number; reason: string }> = 
 };
 
 export function mapPgError(err: unknown): { status: number; reason: string } {
-  const message = err instanceof Error ? err.message : String(err);
+  // supabase-js RPC errors are plain PostgrestError objects, not real Error
+  // instances, so `err instanceof Error` is false and `.message` must be
+  // read directly — falling back to String(err) here previously produced
+  // "[object Object]", which matched no code and masked every RPC error as
+  // a generic 500 (e.g. duplicate RFID taps never surfaced as 409).
+  const message =
+    typeof err === "object" && err !== null && "message" in err && typeof (err as { message: unknown }).message === "string"
+      ? (err as { message: string }).message
+      : err instanceof Error
+        ? err.message
+        : String(err);
   for (const code of Object.keys(PG_ERROR_MAP)) {
     if (message.includes(code)) return PG_ERROR_MAP[code];
   }
