@@ -114,15 +114,15 @@ export const CounterDetailPanel: React.FC = () => {
                     {currentToken.tokenCode}
                   </span>
                   <div className="text-xs text-text-secondary mt-0.5">
-                    {currentToken.notes || "Standard Student Service Request"}
+                    {category?.name || "Service Session"}
                   </div>
                 </div>
 
                 <div className="text-right font-mono">
-                  <div className="text-xs text-text-tertiary">
-                    {currentToken.status === "IN_SERVICE" ? "Service Clock" : "Waiting Time"}
+                  <div className="text-[10px] uppercase text-text-tertiary">
+                    {currentToken.status === "IN_SERVICE" ? "Service Time" : "Waiting Time"}
                   </div>
-                  <div className="text-sm font-bold text-text-primary tabular-nums">
+                  <div className="text-base font-bold text-text-primary tabular-nums">
                     {currentToken.status === "IN_SERVICE"
                       ? formatDuration(currentToken.serviceSeconds || 120)
                       : formatDuration(currentToken.waitingSeconds || 420)}
@@ -130,36 +130,56 @@ export const CounterDetailPanel: React.FC = () => {
                 </div>
               </div>
 
-              {/* Hardware Sensors Status */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-2 border-t border-border-subtle">
-                <RfidIndicator
-                  verified={Boolean(currentToken.rfidVerified)}
-                  uid={currentToken.rfidSessionUid}
-                  timeRemainingSec={currentToken.status === "CALLED" ? 38 : undefined}
-                />
-                <TofGauge
-                  distanceMm={activeCounter.currentDistanceMm}
-                  thresholdMm={activeCounter.distanceThresholdMm}
-                  state={activeCounter.occupancyState}
-                />
+              {/* Consolidated Telemetry Status */}
+              <div className="grid grid-cols-2 gap-2 pt-2 border-t border-border-subtle font-mono text-xs">
+                <div className="p-2 bg-surface-3/50 rounded border border-border-subtle flex items-center justify-between">
+                  <span className="text-text-tertiary text-[10px] uppercase font-sans">RFID</span>
+                  {currentToken.rfidVerified ? (
+                    <span className="text-accent-live text-[11px] font-semibold flex items-center gap-1">
+                      <CheckCircle2 className="w-3 h-3" />
+                      Verified
+                    </span>
+                  ) : (
+                    <span className="text-accent-info text-[11px] flex items-center gap-1">
+                      <Radio className="w-3 h-3 animate-pulse" />
+                      Awaiting Tap
+                    </span>
+                  )}
+                </div>
+
+                <div className="p-2 bg-surface-3/50 rounded border border-border-subtle flex items-center justify-between">
+                  <span className="text-text-tertiary text-[10px] uppercase font-sans">Presence</span>
+                  {activeCounter.occupancyState === "OCCUPIED" ||
+                  activeCounter.currentDistanceMm < activeCounter.distanceThresholdMm ? (
+                    <span className="text-accent-live text-[11px] font-semibold flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-accent-live" />
+                      {activeCounter.currentDistanceMm}mm
+                    </span>
+                  ) : (
+                    <span className="text-text-tertiary text-[11px] flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-text-tertiary" />
+                      Clear ({activeCounter.currentDistanceMm}mm)
+                    </span>
+                  )}
+                </div>
               </div>
             </div>
           ) : (
-            <div className="py-5 text-center text-xs text-text-tertiary">
-              No customer currently assigned to this desk. Counter is ready for next call.
+            <div className="py-4 text-center text-xs text-text-tertiary font-mono">
+              Desk is clear and ready for the next customer.
             </div>
           )}
         </div>
 
-        {/* Live ToF Sensor Slider Test */}
-        <div className="bg-surface-2/40 border border-border-subtle rounded-md p-3.5 space-y-2">
+        {/* Compact ToF Distance Adjuster (Simulation / Bench testing) */}
+        <div className="bg-surface-2/40 border border-border-subtle rounded-md px-3 py-2 space-y-1.5">
           <div className="flex items-center justify-between text-xs">
-            <span className="font-semibold text-text-secondary flex items-center gap-1.5">
-              <Sliders className="w-3.5 h-3.5 text-accent-info" />
-              Interactive VL53L0X ToF Distance Adjuster
+            <span className="font-medium text-text-secondary flex items-center gap-1.5 text-[11px]">
+              <Sliders className="w-3 h-3 text-accent-info" />
+              ToF Presence Simulation
             </span>
             <span className="text-[11px] font-mono text-text-primary">
-              {activeCounter.currentDistanceMm}mm
+              {activeCounter.currentDistanceMm} mm
             </span>
           </div>
 
@@ -173,25 +193,17 @@ export const CounterDetailPanel: React.FC = () => {
               const val = Number(e.target.value);
               triggerClearance(activeCounter.id, val);
             }}
-            className="w-full accent-accent-live h-1.5 bg-surface-3 rounded-lg cursor-pointer"
+            className="w-full accent-accent-live h-1 bg-surface-3 rounded cursor-pointer"
           />
 
           <div className="flex items-center justify-between text-[10px] text-text-tertiary font-mono">
-            <span>&lt; {activeCounter.distanceThresholdMm}mm: Desk Occupied</span>
-            <span>&ge; {activeCounter.distanceThresholdMm}mm: Operational Clear</span>
-            <span>&ge; {activeCounter.fullExitThresholdMm || 1400}mm: Full Exit</span>
+            <span>&lt; {activeCounter.distanceThresholdMm}mm: Occupied</span>
+            <span>&ge; {activeCounter.distanceThresholdMm}mm: Clear</span>
           </div>
         </div>
 
         {/* Hardware Action Buttons */}
-        <div className="pt-2 space-y-2">
-          <div className="text-[10px] uppercase font-semibold text-text-tertiary tracking-wider flex items-center justify-between">
-            <span>ESP32 Hardware Controls</span>
-            <span className="text-[9px] text-accent-live font-mono">
-              Authoritative Edge Logic
-            </span>
-          </div>
-
+        <div className="space-y-2">
           <div className="grid grid-cols-2 gap-2">
             <Button
               size="sm"
@@ -201,7 +213,7 @@ export const CounterDetailPanel: React.FC = () => {
               className="text-xs gap-1.5"
             >
               <PhoneCall className="w-3.5 h-3.5" />
-              Call Next Token
+              Call Next
             </Button>
 
             <Button
@@ -223,7 +235,7 @@ export const CounterDetailPanel: React.FC = () => {
               className="text-xs gap-1.5"
             >
               <Radio className="w-3.5 h-3.5 text-accent-info" />
-              Tap RFID Smartcard
+              Tap RFID
             </Button>
 
             <Button
@@ -234,13 +246,13 @@ export const CounterDetailPanel: React.FC = () => {
               className="text-xs gap-1.5"
             >
               <AlertCircle className="w-3.5 h-3.5 text-accent-warning" />
-              Move to Grace Queue
+              Send to Grace
             </Button>
           </div>
 
           {/* Clearance Lockout or Duplicate Session Notice */}
           {callStatus.blocked && (
-            <div className="p-2 rounded bg-surface-2 border border-accent-warning/30 text-[11px] text-accent-warning font-mono flex items-start gap-2">
+            <div className="p-2 rounded bg-surface-2 border border-accent-warning/30 text-[11px] text-accent-warning font-mono flex items-start gap-1.5">
               <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5 text-accent-warning" />
               <span>{callStatus.reason}</span>
             </div>

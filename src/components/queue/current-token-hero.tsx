@@ -101,71 +101,121 @@ export const CurrentTokenHero: React.FC = () => {
 
         {/* Hero Token Visual */}
         {currentToken ? (
-          <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-center">
-            {/* Left: Token Identifier */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-center">
+            {/* Left: Token Identifier & Duration */}
             <div
-              className="md:col-span-5 cursor-pointer group"
+              className="lg:col-span-5 cursor-pointer group"
               onClick={() => setSelectedTokenId(currentToken.id)}
             >
-              <div className="text-xs uppercase font-semibold text-text-tertiary tracking-wider">
-                Current Serving Token
+              <div className="text-[10px] uppercase font-semibold text-text-tertiary tracking-wider">
+                Serving Customer Token
               </div>
               <div className="mt-1 flex items-baseline gap-3">
                 <span className="text-4xl sm:text-5xl font-extrabold font-mono text-text-primary tracking-tight tabular-nums group-hover:text-accent-live transition-colors">
                   {currentToken.tokenCode}
                 </span>
+                <span className="font-mono text-xs text-text-tertiary">
+                  (Category: {category?.name})
+                </span>
               </div>
-              <p className="text-xs text-text-secondary mt-1.5 line-clamp-2">
-                {currentToken.notes || "Standard university administration request."}
-              </p>
-              <div className="mt-2 text-[11px] font-mono text-accent-info">
-                Click to inspect full audit timeline →
-              </div>
-            </div>
-
-            {/* Middle: Live Timers */}
-            <div className="md:col-span-3 grid grid-cols-2 md:grid-cols-1 gap-3 p-3 bg-surface-2 rounded-md border border-border-subtle font-mono">
-              <div>
-                <div className="text-[10px] uppercase text-text-tertiary">
-                  {currentToken.status === "IN_SERVICE" ? "Service Duration" : "Response Time"}
+              <div className="mt-2 flex items-center gap-4 text-xs font-mono">
+                <div>
+                  <span className="text-text-tertiary text-[10px] block uppercase">
+                    {currentToken.status === "IN_SERVICE" ? "Service Time" : "Response Window"}
+                  </span>
+                  <span className="text-text-primary font-bold text-sm">
+                    {currentToken.status === "IN_SERVICE"
+                      ? formatDuration(currentToken.serviceSeconds || 120)
+                      : `${responseCountdown}s remaining`}
+                  </span>
                 </div>
-                <div className="text-lg font-bold text-text-primary tabular-nums">
-                  {currentToken.status === "IN_SERVICE"
-                    ? formatDuration(currentToken.serviceSeconds || 120)
-                    : `${responseCountdown}s`}
-                </div>
-              </div>
-
-              <div>
-                <div className="text-[10px] uppercase text-text-tertiary">
-                  Initial Queue Wait
-                </div>
-                <div className="text-sm font-semibold text-text-secondary tabular-nums">
-                  {formatDuration(currentToken.waitingSeconds || 420)}
+                <div>
+                  <span className="text-text-tertiary text-[10px] block uppercase">
+                    Queue Wait Time
+                  </span>
+                  <span className="text-text-secondary font-semibold text-sm">
+                    {formatDuration(currentToken.waitingSeconds || 420)}
+                  </span>
                 </div>
               </div>
             </div>
 
-            {/* Right: Hardware Telemetry Sensors */}
-            <div className="md:col-span-4 space-y-2.5">
-              <RfidIndicator
-                verified={Boolean(currentToken.rfidVerified)}
-                uid={currentToken.rfidSessionUid}
-                timeRemainingSec={currentToken.status === "CALLED" ? responseCountdown : undefined}
-              />
-              <TofGauge
-                distanceMm={activeCounter.currentDistanceMm}
-                thresholdMm={activeCounter.distanceThresholdMm}
-                state={activeCounter.occupancyState}
-              />
+            {/* Middle: Crisp Telemetry Status */}
+            <div className="lg:col-span-4 p-3 bg-surface-2 rounded-md border border-border-subtle space-y-2 text-xs font-mono">
+              <div className="flex items-center justify-between">
+                <span className="text-text-tertiary uppercase text-[10px] font-sans">RFID Auth</span>
+                {currentToken.rfidVerified ? (
+                  <span className="text-accent-live font-semibold flex items-center gap-1 text-[11px]">
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    Verified ({currentToken.rfidSessionUid || "Card Matched"})
+                  </span>
+                ) : (
+                  <span className="text-accent-info flex items-center gap-1 text-[11px]">
+                    <Radio className="w-3.5 h-3.5 animate-pulse" />
+                    Awaiting Card ({responseCountdown}s)
+                  </span>
+                )}
+              </div>
+
+              <div className="flex items-center justify-between pt-1.5 border-t border-border-subtle/50">
+                <span className="text-text-tertiary uppercase text-[10px] font-sans">Desk Presence</span>
+                {activeCounter.occupancyState === "OCCUPIED" ||
+                activeCounter.currentDistanceMm < activeCounter.distanceThresholdMm ? (
+                  <span className="text-accent-live font-semibold flex items-center gap-1 text-[11px]">
+                    <span className="w-1.5 h-1.5 rounded-full bg-accent-live" />
+                    Occupied ({activeCounter.currentDistanceMm}mm)
+                  </span>
+                ) : (
+                  <span className="text-text-tertiary flex items-center gap-1 text-[11px]">
+                    <span className="w-1.5 h-1.5 rounded-full bg-text-tertiary" />
+                    Clear ({activeCounter.currentDistanceMm}mm)
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {/* Right: Clerk Action Buttons */}
+            <div className="lg:col-span-3 flex flex-col gap-2">
+              {currentToken.status === "CALLED" && (
+                <>
+                  <Button
+                    size="sm"
+                    variant="live"
+                    onClick={() => triggerRfidTap(activeCounter.id, undefined, true)}
+                    className="text-xs justify-center"
+                  >
+                    Tap RFID (Verify)
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="warning"
+                    onClick={() => triggerMissedToken(activeCounter.id)}
+                    className="text-xs justify-center"
+                  >
+                    Send to Grace Queue
+                  </Button>
+                </>
+              )}
+
+              {currentToken.status === "IN_SERVICE" && (
+                <Button
+                  size="md"
+                  variant="primary"
+                  onClick={() => triggerServiceDone(activeCounter.id)}
+                  className="text-xs gap-1.5 justify-center py-2.5"
+                >
+                  <CheckCircle2 className="w-4 h-4 text-accent-live" />
+                  <span>Service Complete</span>
+                </Button>
+              )}
             </div>
           </div>
         ) : (
-          <div className="py-8 text-center space-y-3">
+          <div className="py-6 text-center space-y-3">
             <p className="text-sm text-text-secondary">
               {callStatus.blocked
-                ? "Desk is physically occupied or session active. Clearance required before calling next customer."
-                : "Counter is clear and ready. Next waiting customer can be called."}
+                ? "Desk is physically occupied. Previous customer must vacate before calling next customer."
+                : `Desk ${activeCounter.code} is clear and ready for the next customer.`}
             </p>
             <div className="flex flex-col items-center gap-2">
               <Button
@@ -176,57 +226,13 @@ export const CurrentTokenHero: React.FC = () => {
                 className="gap-2"
               >
                 <PhoneCall className="w-4 h-4" />
-                Call Next Token from Queue
+                Call Next Token
               </Button>
               {callStatus.blocked && (
                 <div className="text-xs text-accent-warning font-mono bg-accent-warning/10 border border-accent-warning/30 px-3 py-1.5 rounded-md flex items-center gap-1.5 mt-1">
                   <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
                   <span>{callStatus.reason}</span>
                 </div>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* Quick Action Trigger Strip */}
-        {currentToken && (
-          <div className="pt-3 border-t border-border-subtle flex flex-wrap items-center justify-between gap-2">
-            <div className="text-[11px] text-text-tertiary font-mono">
-              ESP32 Node: <strong className="text-text-secondary">ESP32-NODE-{activeCounter.code}</strong>
-            </div>
-
-            <div className="flex items-center gap-2">
-              {currentToken.status === "CALLED" && (
-                <>
-                  <Button
-                    size="sm"
-                    variant="live"
-                    onClick={() => triggerRfidTap(activeCounter.id, undefined, true)}
-                    className="text-xs"
-                  >
-                    Tap Student RFID (Verify)
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="warning"
-                    onClick={() => triggerMissedToken(activeCounter.id)}
-                    className="text-xs"
-                  >
-                    Missed · Send to Grace
-                  </Button>
-                </>
-              )}
-
-              {currentToken.status === "IN_SERVICE" && (
-                <Button
-                  size="sm"
-                  variant="primary"
-                  onClick={() => triggerServiceDone(activeCounter.id)}
-                  className="text-xs gap-1.5"
-                >
-                  <CheckCircle2 className="w-3.5 h-3.5 text-accent-live" />
-                  Staff: Service Complete
-                </Button>
               )}
             </div>
           </div>

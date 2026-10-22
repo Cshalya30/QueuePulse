@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import React from "react";
 import { useQueuePulse } from "@/lib/store";
@@ -14,55 +14,43 @@ import {
 } from "lucide-react";
 
 export const MetricStrip: React.FC = () => {
-  const { metrics, isDemoMode } = useQueuePulse();
+  const { metrics } = useQueuePulse();
 
   return (
-    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4">
+    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
       <MetricCard
-        label="Active Queues"
+        label="Active Desks"
         value={`${metrics.activeQueuesCount} / 4`}
-        sublabel="Operational counters online"
+        sublabel="Counters online"
         icon={<Radio className="w-4 h-4 text-accent-live" />}
         highlight
       />
 
       <MetricCard
-        label="People Waiting"
+        label="Total Waiting"
         value={metrics.totalWaiting}
-        delta={{
-          value: "+3",
-          trend: "up",
-          label: "vs previous hour",
-        }}
+        sublabel="Across all categories"
         icon={<Users className="w-4 h-4 text-accent-info" />}
       />
 
       <MetricCard
         label="Average Wait"
         value={formatDuration(metrics.avgWaitSeconds)}
-        delta={{
-          value: "-1m 15s",
-          trend: "up",
-          label: "Target: 15m (SLA)",
-        }}
+        sublabel="SLA Target: < 15m"
         icon={<Clock className="w-4 h-4 text-accent-warning" />}
       />
 
       <MetricCard
         label="Served Today"
         value={metrics.servedTodayCount}
-        sublabel={`${metrics.slaCompliancePercent}% under 15 min`}
+        sublabel={`${metrics.slaCompliancePercent}% within SLA target`}
         icon={<CheckCircle className="w-4 h-4 text-emerald-400" />}
       />
 
       <MetricCard
-        label="Missed Token Rate"
-        value={`${metrics.missedRatePercent}%`}
-        delta={{
-          value: "-0.8%",
-          trend: "up",
-          label: "In Grace Buffer: 2",
-        }}
+        label="Grace Buffer"
+        value={metrics.graceQueueCount ?? 0}
+        sublabel={`${metrics.missedRatePercent}% missed rate`}
         icon={<AlertTriangle className="w-4 h-4 text-accent-warning" />}
       />
     </div>

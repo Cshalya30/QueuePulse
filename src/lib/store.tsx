@@ -68,6 +68,7 @@ interface QueuePulseContextType {
     servedTodayCount: number;
     missedRatePercent: number;
     slaCompliancePercent: number;
+    graceQueueCount: number;
   };
 }
 
@@ -154,6 +155,7 @@ export const QueuePulseProvider: React.FC<{ children: React.ReactNode }> = ({
       servedTodayCount: completedTokens.length + 140, // Base offset for realistic day total
       missedRatePercent: Number(missedRate.toFixed(1)),
       slaCompliancePercent: slaPercent,
+      graceQueueCount: tokens.filter((t) => t.status === "GRACE_QUEUE").length,
     };
   }, [tokens, counters]);
 

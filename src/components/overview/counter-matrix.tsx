@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import React from "react";
 import { useQueuePulse } from "@/lib/store";
@@ -35,12 +35,9 @@ export const CounterMatrix: React.FC = () => {
             Counter Matrix
           </span>
           <span className="text-xs text-text-tertiary">
-            ({counters.length} hardware nodes)
+            ({counters.length} Desks)
           </span>
         </div>
-        <span className="text-[11px] text-text-tertiary font-mono">
-          Select counter for live telemetry & controls
-        </span>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
@@ -49,7 +46,9 @@ export const CounterMatrix: React.FC = () => {
           const category = categories.find((c) => c.id === counter.serviceCategoryId);
           const device = devices.find((d) => d.id === counter.deviceId);
           const currentToken = tokens.find((t) => t.id === counter.currentTokenId);
-          const isOccupied = counter.occupancyState === "OCCUPIED";
+          const isOccupied =
+            counter.occupancyState === "OCCUPIED" ||
+            counter.currentDistanceMm < counter.distanceThresholdMm;
 
           return (
             <div
@@ -62,7 +61,7 @@ export const CounterMatrix: React.FC = () => {
                   : "bg-surface-1 border-border-subtle hover:border-border-strong hover:bg-surface-2/60"
               )}
             >
-              {/* Top Row: Counter code & device status */}
+              {/* Top Row: Counter code, category, online status */}
               <div className="flex items-center justify-between gap-2">
                 <div className="flex items-center gap-2">
                   <span className="font-mono font-bold text-sm text-text-primary px-2 py-0.5 bg-surface-3 rounded border border-border-subtle">
@@ -80,34 +79,34 @@ export const CounterMatrix: React.FC = () => {
                   </span>
                 </div>
 
-                <div className="flex items-center gap-2">
+                <div>
                   {device?.online ? (
-                    <span className="inline-flex items-center gap-1 text-[10px] text-accent-live font-mono">
-                      <Wifi className="w-3 h-3" />
-                      {device.wifiSignalRssi}dBm
+                    <span className="inline-flex items-center gap-1.5 text-[11px] text-accent-live font-mono">
+                      <span className="w-1.5 h-1.5 rounded-full bg-accent-live" />
+                      Online
                     </span>
                   ) : (
                     <Badge variant="critical" dot>
-                      Node Offline
+                      Offline
                     </Badge>
                   )}
                 </div>
               </div>
 
-              {/* Middle Row: Active Token & Presence */}
-              <div className="mt-3.5 grid grid-cols-2 gap-3 pt-3 border-t border-border-subtle">
+              {/* Middle Row: Current Token & Desk Presence */}
+              <div className="mt-3 grid grid-cols-2 gap-3 pt-3 border-t border-border-subtle items-center">
                 <div>
                   <div className="text-[10px] uppercase font-semibold text-text-tertiary tracking-wider">
-                    Current Token
+                    Serving Token
                   </div>
                   {currentToken ? (
                     <div className="mt-1 flex items-baseline gap-2">
-                      <span className="text-base font-bold text-text-primary font-mono tabular-nums">
+                      <span className="text-lg font-bold text-text-primary font-mono tabular-nums">
                         {currentToken.tokenCode}
                       </span>
                       <span
                         className={cn(
-                          "text-[10px] font-medium px-1.5 py-0.2 rounded font-mono",
+                          "text-[10px] font-medium px-1.5 py-0.5 rounded font-mono",
                           currentToken.status === "IN_SERVICE"
                             ? "text-accent-live bg-accent-live/10 border border-accent-live/25"
                             : "text-accent-info bg-accent-info/10 border border-accent-info/25 animate-pulse"
@@ -118,27 +117,29 @@ export const CounterMatrix: React.FC = () => {
                     </div>
                   ) : (
                     <div className="mt-1 text-xs text-text-tertiary font-mono">
-                      — Ready for Next —
+                      Desk Clear · Ready
                     </div>
                   )}
                 </div>
 
-                <div>
-                  <div className="text-[10px] uppercase font-semibold text-text-tertiary tracking-wider">
-                    ToF Laser Presence
+                <div className="text-right">
+                  <div className="text-[10px] uppercase font-semibold text-text-tertiary tracking-wider mb-1">
+                    Desk Presence
                   </div>
-                  <div className="mt-1">
-                    <TofGauge
-                      distanceMm={counter.currentDistanceMm}
-                      thresholdMm={counter.distanceThresholdMm}
-                      state={counter.occupancyState}
-                      compact
-                    />
-                  </div>
+                  {isOccupied ? (
+                    <span className="inline-flex items-center gap-1.5 text-[11px] font-mono px-2 py-0.5 rounded bg-accent-live/10 text-accent-live border border-accent-live/25">
+                      <span className="w-1.5 h-1.5 rounded-full bg-accent-live" />
+                      Occupied ({counter.currentDistanceMm}mm)
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1.5 text-[11px] font-mono px-2 py-0.5 rounded bg-surface-3 text-text-tertiary border border-border-subtle">
+                      Clear ({counter.currentDistanceMm}mm)
+                    </span>
+                  )}
                 </div>
               </div>
 
-              {/* Bottom Row: Staff, Queue length, and last event */}
+              {/* Bottom Row: Staff & Queue length */}
               <div className="mt-3 pt-2.5 border-t border-border-subtle flex items-center justify-between text-[11px] text-text-tertiary">
                 <div className="flex items-center gap-1.5 truncate">
                   <User className="w-3 h-3 text-text-secondary" />
@@ -147,13 +148,9 @@ export const CounterMatrix: React.FC = () => {
                   </span>
                 </div>
 
-                <div className="flex items-center gap-3 shrink-0 font-mono">
-                  <span className="flex items-center gap-1">
-                    <Layers className="w-3 h-3 text-text-tertiary" />
-                    <span>{counter.queueLength} waiting</span>
-                  </span>
-                  <span>·</span>
-                  <span>{formatRelativeTime(counter.lastEventTime)}</span>
+                <div className="flex items-center gap-1 font-mono text-text-secondary">
+                  <Layers className="w-3 h-3 text-text-tertiary" />
+                  <span>{counter.queueLength} waiting in line</span>
                 </div>
               </div>
 

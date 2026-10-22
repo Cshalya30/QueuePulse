@@ -38,32 +38,19 @@ export const HardwareSimulator: React.FC = () => {
   const currentToken = tokens.find((t) => t.id === activeCounter.currentTokenId);
 
   return (
-    <div className="p-4 bg-surface-1 border border-border-strong rounded-md space-y-3 shadow-md">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-border-subtle pb-3">
-        <div className="flex items-center gap-2">
-          <div className="p-1.5 rounded bg-accent-live/15 text-accent-live border border-accent-live/30">
-            <Cpu className="w-4 h-4" />
-          </div>
-          <div>
-            <h3 className="text-xs font-bold text-text-primary uppercase tracking-wider flex items-center gap-2">
-              <span>Interactive Hardware Simulator</span>
-              <span className="text-[10px] font-mono font-normal px-1.5 py-0.2 bg-surface-3 text-text-tertiary rounded border border-border-subtle">
-                ESP32 + Sensors
-              </span>
-            </h3>
-            <p className="text-[11px] text-text-tertiary">
-              Simulate physical button presses, ToF laser distances, and RFID cards on selected counter
-            </p>
-          </div>
+    <div className="p-3 bg-surface-1 border border-border-subtle rounded-md flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs shadow-sm">
+      <div className="flex items-center gap-2.5">
+        <div className="p-1 rounded bg-surface-3 text-accent-live border border-border-subtle shrink-0">
+          <Cpu className="w-3.5 h-3.5" />
         </div>
-
-        {/* Counter Target Selector */}
         <div className="flex items-center gap-2">
-          <span className="text-xs text-text-tertiary">Target Counter:</span>
+          <span className="font-semibold text-text-primary text-xs">
+            Hardware Testing Tool:
+          </span>
           <select
             value={selectedCounterId}
             onChange={(e) => setSelectedCounterId(e.target.value)}
-            className="bg-surface-2 border border-border-strong text-text-primary text-xs rounded px-2.5 py-1 font-mono focus:outline-none focus:ring-1 focus:ring-accent-live"
+            className="bg-surface-2 border border-border-strong text-text-primary text-xs rounded px-2 py-0.5 font-mono focus:outline-none focus:ring-1 focus:ring-accent-live"
           >
             {counters.map((c) => (
               <option key={c.id} value={c.id}>
@@ -74,81 +61,38 @@ export const HardwareSimulator: React.FC = () => {
         </div>
       </div>
 
-      {/* Simulator Action Buttons Grid */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2">
+      <div className="flex flex-wrap items-center gap-2 font-mono text-xs">
         <Button
           size="compact"
           variant="outline"
           onClick={() => generateToken(activeCounter.serviceCategoryId)}
-          className="text-xs"
+          className="text-xs gap-1"
         >
-          <Layers className="w-3.5 h-3.5 text-accent-info" />
-          + Issue Token
-        </Button>
-
-        <Button
-          size="compact"
-          variant="live"
-          onClick={() => callNextToken(activeCounter.id)}
-          disabled={callStatus.blocked}
-          title={callStatus.reason || "Call next token"}
-          className="text-xs"
-        >
-          <PhoneCall className="w-3.5 h-3.5" />
-          Call Next
-        </Button>
-
-        <Button
-          size="compact"
-          variant="outline"
-          onClick={() => triggerRfidTap(activeCounter.id, undefined, true)}
-          disabled={!currentToken || currentToken.status !== "CALLED"}
-          className="text-xs"
-        >
-          <Radio className="w-3.5 h-3.5 text-accent-live" />
-          RFID Tap Match
-        </Button>
-
-        <Button
-          size="compact"
-          variant="warning"
-          onClick={() => triggerMissedToken(activeCounter.id)}
-          disabled={!currentToken || currentToken.status !== "CALLED"}
-          className="text-xs"
-        >
-          <AlertCircle className="w-3.5 h-3.5 text-accent-warning" />
-          Missed Timeout
-        </Button>
-
-        <Button
-          size="compact"
-          variant="primary"
-          onClick={() => triggerServiceDone(activeCounter.id)}
-          disabled={!currentToken || currentToken.status !== "IN_SERVICE"}
-          className="text-xs"
-        >
-          <CheckCircle2 className="w-3.5 h-3.5 text-accent-live" />
-          Service Done
+          <Layers className="w-3 h-3 text-accent-info" />
+          <span>+ Print Ticket</span>
         </Button>
 
         <Button
           size="compact"
           variant="outline"
           onClick={() => triggerClearance(activeCounter.id, 1400)}
-          className="text-xs"
+          className="text-xs gap-1"
         >
-          <Sliders className="w-3.5 h-3.5 text-emerald-400" />
-          ToF Clear (1400mm)
+          <Sliders className="w-3 h-3 text-emerald-400" />
+          <span>Simulate Clear (1400mm)</span>
+        </Button>
+
+        <Button
+          size="compact"
+          variant="ghost"
+          onClick={resetToInitialState}
+          className="text-xs text-text-tertiary hover:text-text-primary gap-1"
+          title="Reset to default data"
+        >
+          <RotateCcw className="w-3 h-3" />
+          <span>Reset</span>
         </Button>
       </div>
-
-      {/* State Lock Notice in Simulator */}
-      {callStatus.blocked && (
-        <div className="text-[11px] text-accent-warning font-mono bg-surface-2 px-2.5 py-1 rounded border border-accent-warning/25 flex items-center gap-1.5">
-          <AlertCircle className="w-3 h-3 shrink-0" />
-          <span>Call Lock: {callStatus.reason}</span>
-        </div>
-      )}
     </div>
   );
 };

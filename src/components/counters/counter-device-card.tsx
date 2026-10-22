@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import React from "react";
 import { Counter, Device, ServiceCategory, Token } from "@/types/queuepulse";
@@ -71,59 +71,59 @@ export const CounterDeviceCard: React.FC<CounterDeviceCardProps> = ({
         </div>
       </CardHeader>
 
-      <CardContent className="space-y-4 pt-1">
-        {/* Hardware Node Telemetry Block */}
-        <div className="p-3 bg-surface-2 rounded-md border border-border-subtle space-y-2 text-xs font-mono">
-          <div className="flex items-center justify-between text-text-secondary">
-            <span className="flex items-center gap-1.5">
-              <Cpu className="w-3.5 h-3.5 text-accent-live" />
-              <span>{device?.deviceCode || "ESP32-NODE"}</span>
-            </span>
-            <span className="text-[10px] text-text-tertiary">
-              {device?.firmwareVersion || "v2.4.1"}
-            </span>
-          </div>
-
-          <div className="grid grid-cols-2 gap-2 pt-1 border-t border-border-subtle/50 text-[11px] text-text-tertiary">
-            <div className="flex items-center gap-1.5">
-              <Wifi className="w-3 h-3 text-accent-info" />
-              <span>{isOnline ? `${device?.wifiSignalRssi} dBm` : "No Signal"}</span>
-            </div>
-            <div className="flex items-center gap-1.5 justify-end">
-              <Clock className="w-3 h-3 text-text-tertiary" />
-              <span>Seen: {formatRelativeTime(device?.lastSeenAt)}</span>
-            </div>
-          </div>
-        </div>
-
-        {/* Current Active Token & Operator */}
-        <div className="grid grid-cols-2 gap-3 text-xs">
+      <CardContent className="space-y-3.5 pt-1">
+        {/* Active Customer & Staff */}
+        <div className="p-3 bg-surface-2 rounded-md border border-border-subtle flex items-center justify-between">
           <div>
-            <span className="text-[10px] uppercase font-semibold text-text-tertiary">
-              Active Desk Session
+            <span className="text-[10px] uppercase font-semibold text-text-tertiary block">
+              Active Serving Token
             </span>
-            <div className="font-mono font-bold text-text-primary text-sm mt-0.5">
+            <div className="font-mono font-bold text-text-primary text-base mt-0.5">
               {currentToken ? currentToken.tokenCode : "— Clear —"}
             </div>
           </div>
 
-          <div>
-            <span className="text-[10px] uppercase font-semibold text-text-tertiary">
+          <div className="text-right">
+            <span className="text-[10px] uppercase font-semibold text-text-tertiary block">
               Staff In-Charge
             </span>
-            <div className="text-text-secondary truncate mt-0.5">
+            <div className="text-xs text-text-secondary mt-0.5 font-medium truncate max-w-[120px]">
               {counter.staffName || "Desk Staff"}
             </div>
           </div>
         </div>
 
-        {/* ToF Distance Gauge */}
-        <div>
-          <TofGauge
-            distanceMm={counter.currentDistanceMm}
-            thresholdMm={counter.distanceThresholdMm}
-            state={counter.occupancyState}
-          />
+        {/* Presence & Link Telemetry */}
+        <div className="grid grid-cols-2 gap-2 text-xs font-mono">
+          <div className="p-2.5 bg-surface-2/60 rounded border border-border-subtle">
+            <span className="text-[10px] uppercase text-text-tertiary block font-sans">
+              Laser Presence
+            </span>
+            <div className="mt-1 font-semibold text-text-primary flex items-center gap-1.5">
+              {counter.occupancyState === "OCCUPIED" ||
+              counter.currentDistanceMm < counter.distanceThresholdMm ? (
+                <>
+                  <span className="w-1.5 h-1.5 rounded-full bg-accent-live shrink-0" />
+                  <span className="text-accent-live">{counter.currentDistanceMm}mm</span>
+                </>
+              ) : (
+                <>
+                  <span className="w-1.5 h-1.5 rounded-full bg-text-tertiary shrink-0" />
+                  <span className="text-text-secondary">Clear ({counter.currentDistanceMm}mm)</span>
+                </>
+              )}
+            </div>
+          </div>
+
+          <div className="p-2.5 bg-surface-2/60 rounded border border-border-subtle">
+            <span className="text-[10px] uppercase text-text-tertiary block font-sans">
+              Wi-Fi Link
+            </span>
+            <div className="mt-1 font-semibold text-text-primary flex items-center gap-1.5">
+              <Wifi className="w-3 h-3 text-accent-info shrink-0" />
+              <span>{isOnline ? `${device?.wifiSignalRssi || -55} dBm` : "No Signal"}</span>
+            </div>
+          </div>
         </div>
 
         {/* Actions Footer */}
@@ -137,7 +137,7 @@ export const CounterDeviceCard: React.FC<CounterDeviceCardProps> = ({
                   : "text-accent-live bg-accent-live/10 border-accent-live/30 font-semibold"
               }`}
             >
-              {isOnline ? "Simulate Drop" : "Restore Wi-Fi"}
+              {isOnline ? "Simulate Disconnect" : "Restore Link"}
             </button>
           )}
 
@@ -148,7 +148,7 @@ export const CounterDeviceCard: React.FC<CounterDeviceCardProps> = ({
               onClick={() => onOpenDiagnostics(device.id)}
               className="text-xs"
             >
-              Node Diagnostics →
+              Diagnostics →
             </Button>
           )}
         </div>

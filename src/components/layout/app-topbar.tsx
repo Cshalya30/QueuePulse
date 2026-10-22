@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import React, { useState, useEffect } from "react";
 import { useQueuePulse } from "@/lib/store";
@@ -60,22 +60,15 @@ export const AppTopbar: React.FC<AppTopbarProps> = ({ onOpenScenarioModal }) => 
       {/* Workspace identity */}
       <div className="flex items-center gap-3">
         <div>
-          <div className="flex items-center gap-2">
-            <h1 className="text-xs sm:text-sm font-semibold text-text-primary tracking-tight">
-              {workspace.name}
-            </h1>
-            <span className="hidden lg:inline-flex items-center gap-1 text-[10px] text-text-tertiary font-mono">
-              · {workspace.location}
-            </span>
-          </div>
+          <h1 className="text-xs sm:text-sm font-semibold text-text-primary tracking-tight">
+            {workspace.name}
+          </h1>
           <div className="flex items-center gap-2 text-[11px] text-text-secondary">
-            <span className="flex items-center gap-1 text-accent-live">
-              <span className="w-1.5 h-1.5 rounded-full bg-accent-live animate-ping" />
-              <span>Live Operational Telemetry</span>
-            </span>
+            <span className="text-text-tertiary">{workspace.location}</span>
             <span className="text-text-tertiary">·</span>
-            <span className="font-mono tabular-nums text-text-tertiary">
-              {onlineDevicesCount}/{devices.length} Nodes Online
+            <span className="flex items-center gap-1 text-accent-live font-mono text-[10px]">
+              <span className="w-1.5 h-1.5 rounded-full bg-accent-live animate-pulse" />
+              <span>{onlineDevicesCount}/{devices.length} Nodes Online</span>
             </span>
           </div>
         </div>
@@ -159,9 +152,8 @@ export const AppTopbar: React.FC<AppTopbarProps> = ({ onOpenScenarioModal }) => 
         </button>
 
         {/* Live Clock */}
-        <div className="hidden md:flex flex-col text-right font-mono tabular-nums text-xs">
-          <span className="text-text-primary font-semibold">{currentTime}</span>
-          <span className="text-[10px] text-text-tertiary">UTC+05:30</span>
+        <div className="hidden md:flex items-center font-mono tabular-nums text-xs text-text-secondary px-2 py-1 bg-surface-2 rounded border border-border-subtle">
+          <span>{currentTime}</span>
         </div>
       </div>
     </header>

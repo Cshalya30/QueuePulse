@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import React from "react";
 import { MetricStrip } from "@/components/overview/metric-strip";
@@ -12,11 +12,11 @@ import { Radio, Layers, Sparkles, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 export default function OperationsOverviewPage() {
-  const { workspace, isDemoMode, generateToken, categories } = useQueuePulse();
+  const { workspace } = useQueuePulse();
 
   return (
     <div className="space-y-6">
-      {/* Top Header & Fast Actions */}
+      {/* Top Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-border-subtle pb-4">
         <div>
           <div className="flex items-center gap-2">
@@ -28,52 +28,31 @@ export default function OperationsOverviewPage() {
             </span>
           </div>
           <p className="text-xs text-text-secondary mt-0.5">
-            {workspace.name} · Real-time physical counter telemetry & queue state machine
+            Real-time desk occupancy, queue throughput, and counter controls
           </p>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => generateToken(categories[0].id)}
-            className="text-xs gap-1.5"
-          >
-            <Layers className="w-3.5 h-3.5 text-accent-live" />
-            Issue Test Token (+DOC)
-          </Button>
-
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => generateToken(categories[1].id)}
-            className="text-xs gap-1.5"
-          >
-            <Layers className="w-3.5 h-3.5 text-accent-info" />
-            +ACC Token
-          </Button>
         </div>
       </div>
 
       {/* Top Metric Strip */}
       <MetricStrip />
 
-      {/* Main Operational Split-Pane Workspace (Haulix Style) */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+      {/* Main Operational Split-Pane Workspace */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
         {/* Left Side: Counter Matrix (7 cols on lg) */}
-        <div className="lg:col-span-7 space-y-6">
+        <div className="lg:col-span-7">
           <CounterMatrix />
-          <QueuePressureChart />
         </div>
 
-        {/* Right Side: Selected Counter Detail Panel + Activity Rail (5 cols on lg) */}
-        <div className="lg:col-span-5 space-y-6">
+        {/* Right Side: Selected Counter Detail Panel (5 cols on lg) */}
+        <div className="lg:col-span-5">
           <CounterDetailPanel />
-          <div className="grid grid-cols-1 gap-6">
-            <CategoryPerformanceBars />
-            <ActivityRail />
-          </div>
         </div>
+      </div>
+
+      {/* Secondary Operational Insights: Category SLAs & Recent Events */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 pt-2 border-t border-border-subtle">
+        <CategoryPerformanceBars />
+        <ActivityRail />
       </div>
     </div>
   );
