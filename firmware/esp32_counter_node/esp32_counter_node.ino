@@ -110,7 +110,7 @@ const char* WIFI_SSID        = "C Shalya's S24 FE";
 const char* WIFI_PASSWORD    = "ufvc1550";
 const char* API_BASE_URL     = "https://queue-pulse-beta.vercel.app"; // confirmed via Vercel project domains, verified READY in production
 const char* DEVICE_CODE      = "ESP32-NODE-DOC-01";
-const char* DEVICE_SECRET    = "d81832387100035def53f0d47986e67d351b6d3fabc42695"; // provisioned earlier for ESP32-NODE-DOC-01 — never share this outside this file
+const char* DEVICE_SECRET    = "154c927daa4c6713121d353f3f2cef3c5cb6ffe61447b2ed37c5159acf0497b2"; // provisioned earlier for ESP32-NODE-DOC-01 — never share this outside this file
 const char* COUNTER_ID       = "e5753c48-1156-4de9-bfd1-6bfc95d5243e"; // counters.DOC-01, linked to this device
 const char* WORKSPACE_ID     = "39db346b-8838-4daf-b5f9-95c44c5d3cfb"; // optional: required by /api/events; this device's workspace
 
