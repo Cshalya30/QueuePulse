@@ -106,13 +106,13 @@ static const char ROOT_CA_PEM[] = "";
 #define USE_SETINSECURE true
 
 // ---- Site configuration (fill in before flashing) ----
-const char* WIFI_SSID        = "YOUR_WIFI_SSID";
-const char* WIFI_PASSWORD    = "YOUR_WIFI_PASSWORD";
-const char* API_BASE_URL     = "https://your-deployment.vercel.app"; // no trailing slash
+const char* WIFI_SSID        = "C Shalya's S24 FE";       // TODO: fill in — I don't have this
+const char* WIFI_PASSWORD    = "ufvc1550";   // TODO: fill in — I don't have this
+const char* API_BASE_URL     = "https://queue-pulse-beta.vercel.app/"; // TODO: fill in your real Vercel URL — Vercel lookup was blocked by an auth-scope error, see chat; no trailing slash
 const char* DEVICE_CODE      = "ESP32-NODE-DOC-01";
-const char* DEVICE_SECRET    = "REPLACE_WITH_PROVISIONED_SECRET"; // see scripts/provision-device.mjs — NEVER logged below
-const char* COUNTER_ID       = "REPLACE_WITH_COUNTER_UUID";       // from the `counters` table
-const char* WORKSPACE_ID     = "";                                 // optional: required by /api/events; leave "" to skip event logging
+const char* DEVICE_SECRET    = "d81832387100035def53f0d47986e67d351b6d3fabc42695"; // provisioned earlier for ESP32-NODE-DOC-01 — never share this outside this file
+const char* COUNTER_ID       = "e5753c48-1156-4de9-bfd1-6bfc95d5243e"; // counters.DOC-01, linked to this device
+const char* WORKSPACE_ID     = "39db346b-8838-4daf-b5f9-95c44c5d3cfb"; // optional: required by /api/events; this device's workspace
 
 // ---- Pins (fixed to the physical build already wired/tested — do not move) ----
 #define RFID_SS_PIN    5
