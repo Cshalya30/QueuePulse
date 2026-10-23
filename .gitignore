@@ -27,6 +27,9 @@ yarn-error.log*
 .env*.local
 .env
 
+# local-only firmware copy with real credentials filled in — never commit this
+firmware/esp32_counter_node/esp32_counter_node.local.ino
+
 # vercel
 .vercel
 

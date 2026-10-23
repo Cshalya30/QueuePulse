@@ -106,11 +106,11 @@ static const char ROOT_CA_PEM[] = "";
 #define USE_SETINSECURE true
 
 // ---- Site configuration (fill in before flashing) ----
-const char* WIFI_SSID        = "C Shalya's S24 FE";
-const char* WIFI_PASSWORD    = "ufvc1550";
+const char* WIFI_SSID        = "YOUR_WIFI_SSID";       // fill in locally — never commit a real value (see .gitignore'd esp32_counter_node.local.ino)
+const char* WIFI_PASSWORD    = "YOUR_WIFI_PASSWORD";   // fill in locally — never commit a real value
 const char* API_BASE_URL     = "https://queue-pulse-beta.vercel.app"; // confirmed via Vercel project domains, verified READY in production
 const char* DEVICE_CODE      = "ESP32-NODE-DOC-01";
-const char* DEVICE_SECRET    = "154c927daa4c6713121d353f3f2cef3c5cb6ffe61447b2ed37c5159acf0497b2"; // provisioned earlier for ESP32-NODE-DOC-01 — never share this outside this file
+const char* DEVICE_SECRET    = "REPLACE_WITH_PROVISIONED_SECRET"; // see scripts/provision-device.mjs — fill in locally, never commit a real value
 const char* COUNTER_ID       = "e5753c48-1156-4de9-bfd1-6bfc95d5243e"; // counters.DOC-01, linked to this device
 const char* WORKSPACE_ID     = "39db346b-8838-4daf-b5f9-95c44c5d3cfb"; // optional: required by /api/events; this device's workspace
 
